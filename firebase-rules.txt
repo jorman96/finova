@@ -1,0 +1,67 @@
+# Reglas de Seguridad para Firebase (Finova)
+
+Para garantizar la seguridad de los datos y documentos de tus clientes, debes aplicar las siguientes reglas en la consola de Firebase.
+
+## 1. Reglas para Cloud Firestore
+
+Ve a Firestore Database > Reglas (Rules) y reemplaza el contenido con:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Regla base: Solo usuarios autenticados pueden leer y escribir.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Opcional - Reglas Avanzadas para el futuro:
+    // Podrías restringir la eliminación de préstamos o cuotas, 
+    // permitiendo solo creaciones y actualizaciones.
+    
+    match /prestamos/{prestamoId} {
+      allow read, create, update: if request.auth != null;
+      allow delete: if false; // Nadie puede borrar préstamos físicamente
+    }
+    
+    match /cuotas/{cuotaId} {
+      allow read, create, update: if request.auth != null;
+      allow delete: if false; 
+    }
+  }
+}
+```
+
+## 2. Reglas para Firebase Storage
+
+Ve a Storage > Reglas (Rules) y reemplaza el contenido con:
+
+```javascript
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Regla general: Solo usuarios autenticados pueden subir, leer y descargar documentos.
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Regla específica para documentos:
+    // Limitar el tamaño a 5MB por archivo y verificar que sean imágenes o PDFs
+    match /clientes/{clienteId}/documentos/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*|application/pdf');
+    }
+    
+    match /pagos/{pagoId}/comprobantes/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*|application/pdf');
+    }
+  }
+}
+```
