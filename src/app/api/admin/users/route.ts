@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     // Check if the caller is superadmin by checking Firestore (or custom claims)
     const callerDoc = await adminDb.collection('usuarios').doc(decodedToken.uid).get();
     const callerData = callerDoc.data();
-    const { email, password, nombre, empresaId, rol } = await request.json();
+    const { email, password, nombre, documento, telefono, empresaId, rol } = await request.json();
 
     if (!callerDoc.exists) {
       return NextResponse.json({ error: 'Permisos insuficientes.' }, { status: 403 });
@@ -52,6 +52,8 @@ export async function POST(request: Request) {
     await adminDb.collection('usuarios').doc(userRecord.uid).set({
       email,
       nombre,
+      documento: documento || '',
+      telefono: telefono || '',
       empresaId,
       rol: rol || 'dueño',
       createdAt: new Date()

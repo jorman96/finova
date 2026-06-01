@@ -26,14 +26,23 @@ export default function MasterPanelPage() {
   const [metrics, setMetrics] = useState({ clientes: 0, prestamos: 0, empresas: 0 });
 
   // Create Empresa
-  const [nuevaEmpresa, setNuevaEmpresa] = useState("");
-  const [nuevoPlan, setNuevoPlan] = useState("basico");
+  const [nuevaEmpresa, setNuevaEmpresa] = useState({
+    nombre: "",
+    razonSocial: "",
+    identificacionFiscal: "",
+    direccion: "",
+    telefono: "",
+    email: "",
+    pais: "Ecuador",
+    moneda: "USD",
+    plan: "basico"
+  });
   const [creando, setCreando] = useState(false);
 
   // Create User Modal
   const [openUserModal, setOpenUserModal] = useState(false);
   const [selectedEmpresaId, setSelectedEmpresaId] = useState("");
-  const [newUser, setNewUser] = useState({ nombre: "", email: "", password: "" });
+  const [newUser, setNewUser] = useState({ nombre: "", email: "", password: "", documento: "", telefono: "" });
   const [creatingUser, setCreatingUser] = useState(false);
 
   useEffect(() => {
@@ -73,19 +82,20 @@ export default function MasterPanelPage() {
 
   const handleCreateEmpresa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevaEmpresa) return;
+    if (!nuevaEmpresa.nombre || !nuevaEmpresa.identificacionFiscal) return;
 
     setCreando(true);
     try {
       await addDoc(collection(db, "empresas"), {
-        nombre: nuevaEmpresa,
-        plan: nuevoPlan,
+        ...nuevaEmpresa,
         estado: "activa",
         createdAt: serverTimestamp()
       });
       toast.success("Empresa (Inquilino) creada exitosamente.");
-      setNuevaEmpresa("");
-      setNuevoPlan("basico");
+      setNuevaEmpresa({
+        nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "", 
+        telefono: "", email: "", pais: "Ecuador", moneda: "USD", plan: "basico"
+      });
       loadData();
     } catch (error) {
       console.error(error);
@@ -129,7 +139,7 @@ export default function MasterPanelPage() {
 
       toast.success("Usuario administrador creado.");
       setOpenUserModal(false);
-      setNewUser({ nombre: "", email: "", password: "" });
+      setNewUser({ nombre: "", email: "", password: "", documento: "", telefono: "" });
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -194,14 +204,74 @@ export default function MasterPanelPage() {
                   <Label>Nombre Comercial</Label>
                   <Input 
                     placeholder="Ej. PrestaFácil S.A." 
-                    value={nuevaEmpresa}
-                    onChange={e => setNuevaEmpresa(e.target.value)}
+                    value={nuevaEmpresa.nombre}
+                    onChange={e => setNuevaEmpresa({...nuevaEmpresa, nombre: e.target.value})}
                     required
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label>Razón Social (Opcional)</Label>
+                  <Input 
+                    placeholder="Ej. Inversiones PrestaFácil S.A." 
+                    value={nuevaEmpresa.razonSocial}
+                    onChange={e => setNuevaEmpresa({...nuevaEmpresa, razonSocial: e.target.value})}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>RUC / NIT</Label>
+                    <Input 
+                      value={nuevaEmpresa.identificacionFiscal}
+                      onChange={e => setNuevaEmpresa({...nuevaEmpresa, identificacionFiscal: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>País</Label>
+                    <Input 
+                      value={nuevaEmpresa.pais}
+                      onChange={e => setNuevaEmpresa({...nuevaEmpresa, pais: e.target.value})}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Dirección Física</Label>
+                  <Input 
+                    value={nuevaEmpresa.direccion}
+                    onChange={e => setNuevaEmpresa({...nuevaEmpresa, direccion: e.target.value})}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Teléfono</Label>
+                    <Input 
+                      type="tel"
+                      value={nuevaEmpresa.telefono}
+                      onChange={e => setNuevaEmpresa({...nuevaEmpresa, telefono: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Moneda</Label>
+                    <Input 
+                      value={nuevaEmpresa.moneda}
+                      onChange={e => setNuevaEmpresa({...nuevaEmpresa, moneda: e.target.value})}
+                      placeholder="Ej. USD, MXN"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Correo Institucional</Label>
+                  <Input 
+                    type="email"
+                    value={nuevaEmpresa.email}
+                    onChange={e => setNuevaEmpresa({...nuevaEmpresa, email: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label>Plan de Suscripción</Label>
-                  <Select value={nuevoPlan} onValueChange={(val) => setNuevoPlan(val || "basico")}>
+                  <Select value={nuevaEmpresa.plan} onValueChange={(val) => setNuevaEmpresa({...nuevaEmpresa, plan: val || "basico"})}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="basico">Básico</SelectItem>
@@ -288,6 +358,16 @@ export default function MasterPanelPage() {
             <div className="space-y-2">
               <Label>Nombre Completo</Label>
               <Input required value={newUser.nombre} onChange={e => setNewUser({...newUser, nombre: e.target.value})} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Documento (DNI/Cédula)</Label>
+                <Input required value={newUser.documento} onChange={e => setNewUser({...newUser, documento: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Teléfono Móvil</Label>
+                <Input type="tel" required value={newUser.telefono} onChange={e => setNewUser({...newUser, telefono: e.target.value})} />
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Correo Electrónico (Login)</Label>

@@ -2,9 +2,26 @@ export interface Usuario {
   uid: string;
   nombre: string;
   email: string;
+  documento?: string; // Nuevo
+  telefono?: string;  // Nuevo
   rol: 'superadmin' | 'admin' | 'dueño' | 'gestor' | 'cobrador' | 'cajero' | 'consulta';
   empresaId: string;
   activo: boolean;
+  createdAt: any;
+}
+
+export interface Empresa {
+  id: string;
+  nombre: string; // Nombre Comercial
+  razonSocial: string;
+  identificacionFiscal: string; // RUC/NIT
+  direccion: string;
+  telefono: string;
+  email: string;
+  pais: string;
+  moneda: string;
+  plan: 'basico' | 'pro' | 'premium';
+  estado: 'activa' | 'suspendida';
   createdAt: any;
 }
 
