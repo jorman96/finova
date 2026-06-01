@@ -66,7 +66,7 @@ export default function MasterPanelPage() {
       // Cargar Dueños
       const qDuenos = query(collection(db, "usuarios"), where("rol", "==", "dueño"));
       const snapDuenos = await getDocs(qDuenos);
-      const duenosData = snapDuenos.docs.map(d => ({ id: d.id, ...d.data() }));
+      const duenosData = snapDuenos.docs.map(d => ({ id: d.id, ...d.data() } as any));
 
       const empresasConDueno = empresasData.map(emp => {
         const dueno = duenosData.find(d => d.empresaId === emp.id);
