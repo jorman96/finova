@@ -2,7 +2,7 @@ export interface Usuario {
   uid: string;
   nombre: string;
   email: string;
-  rol: 'superadmin' | 'admin' | 'gestor' | 'consulta';
+  rol: 'superadmin' | 'admin' | 'dueño' | 'gestor' | 'cobrador' | 'cajero' | 'consulta';
   empresaId: string;
   activo: boolean;
   createdAt: any;
@@ -36,6 +36,7 @@ export interface Cliente {
 
   // Estado financiero/Resumen
   estado: 'activo' | 'moroso' | 'cerrado' | 'nuevo';
+  score?: number;
   documentos?: { nombre: string; url: string }[];
   createdAt: any;
 }

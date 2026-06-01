@@ -201,7 +201,7 @@ export default function MasterPanelPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Plan de Suscripción</Label>
-                  <Select value={nuevoPlan} onValueChange={setNuevoPlan}>
+                  <Select value={nuevoPlan} onValueChange={(val) => setNuevoPlan(val || "basico")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="basico">Básico</SelectItem>

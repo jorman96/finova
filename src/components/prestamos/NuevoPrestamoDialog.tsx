@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Loader2 } from "lucide-react";
-import { collection, addDoc, serverTimestamp, getDocs, writeBatch, doc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, writeBatch, doc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -37,7 +37,7 @@ export function NuevoPrestamoDialog() {
   useEffect(() => {
     if (open && userData?.empresaId) {
       getDocs(query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId))).then(snapshot => {
-        setClientes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cliente)));
+        setClientes(snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Cliente)));
       });
     }
   }, [open, userData?.empresaId]);

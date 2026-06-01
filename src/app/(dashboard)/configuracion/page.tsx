@@ -369,7 +369,7 @@ function EquipoTab() {
               </div>
               <div className="space-y-2">
                 <Label>Rol del Sistema</Label>
-                <Select value={nuevo.rol} onValueChange={val => setNuevo({...nuevo, rol: val})}>
+                <Select value={nuevo.rol} onValueChange={val => setNuevo({...nuevo, rol: val || "cajero"})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cajero">Cajero (Solo registra cobros)</SelectItem>

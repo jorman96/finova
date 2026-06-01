@@ -75,7 +75,7 @@ export function PagosChart({ data }: PagosChartProps) {
             axisLine={false}
           />
           <Tooltip 
-            formatter={(value: number) => [`$${value.toFixed(2)}`, "Recaudado"]}
+            formatter={(value: any) => [`$${Number(value || 0).toFixed(2)}`, "Recaudado"]}
             contentStyle={{ borderRadius: '8px', border: '1px solid hsl(var(--border))', backgroundColor: 'hsl(var(--background))' }}
           />
           <Area 
