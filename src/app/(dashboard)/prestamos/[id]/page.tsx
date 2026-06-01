@@ -127,7 +127,9 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
                   numero: c.numeroCuota,
                   fechaVencimiento: c.fechaVencimiento,
                   monto: c.totalCuota,
-                  saldoPendienteAntes: Math.max(0, prestamo.totalPagar - ((c.numeroCuota - 1) * c.totalCuota))
+                  capital: c.capital,
+                  interes: c.interes,
+                  saldoPendienteAntes: c.saldoPendiente
                 }));
 
                 await generarContratoPrestamo(prestamoFormatted, clienteSnap.data(), empresaSnap.data(), cuotasFormatted);

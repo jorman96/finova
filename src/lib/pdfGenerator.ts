@@ -107,6 +107,11 @@ export const generarContratoPrestamo = async (
 ) => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+  
+  // Colores Premium (Slate 900 y Slate 500)
+  const primaryColor: [number, number, number] = [15, 23, 42]; 
+  const secondaryColor: [number, number, number] = [100, 116, 139];
 
   if (empresa?.logoUrl) {
     try {
@@ -118,60 +123,107 @@ export const generarContratoPrestamo = async (
   }
 
   // Encabezado
-  doc.setFontSize(20);
-  doc.setTextColor(40, 40, 40);
-  doc.text(empresa?.nombre || "Finova Capital", empresa?.logoUrl ? 60 : 14, 25);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(...primaryColor);
+  doc.text(empresa?.nombre || "Finova Capital", empresa?.logoUrl ? 60 : 14, 24);
+  
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(...secondaryColor);
+  doc.text("TABLA DE AMORTIZACIÓN Y CRÉDITO", empresa?.logoUrl ? 60 : 14, 32);
+  doc.text(`Fecha de Emisión: ${format(new Date(), "dd MMM yyyy", { locale: es })}`, pageWidth - 14, 25, { align: "right" });
+
+  // Línea separadora principal
+  doc.setDrawColor(226, 232, 240); // Slate 200
+  doc.setLineWidth(0.5);
+  doc.line(14, 40, pageWidth - 14, 40); 
+
+  // Caja de Resumen del Préstamo (Fondo claro)
+  doc.setFillColor(248, 250, 252); // Slate 50
+  doc.roundedRect(14, 45, pageWidth - 28, 30, 2, 2, "F");
   
   doc.setFontSize(10);
-  doc.setTextColor(100, 100, 100);
-  doc.text("PLAN DE AMORTIZACIÓN Y CRÉDITO", empresa?.logoUrl ? 60 : 14, 32);
-  doc.text(`Fecha: ${format(new Date(), "dd MMM yyyy", { locale: es })}`, pageWidth - 14, 25, { align: "right" });
-
-  doc.line(14, 45, pageWidth - 14, 45); 
-
-  // Datos
-  doc.setFontSize(11);
-  doc.setTextColor(40, 40, 40);
+  doc.setTextColor(...primaryColor);
   
-  // Columna Izquierda
-  doc.text(`Cliente: ${cliente.nombres} ${cliente.apellidos}`, 14, 55);
-  doc.text(`Identificación: ${cliente.cedula}`, 14, 62);
-  doc.text(`Monto Aprobado: ${formatMoney(prestamo.montoOriginal, empresa?.moneda)}`, 14, 69);
+  // Columna Izquierda (Cliente)
+  doc.setFont("helvetica", "bold");
+  doc.text("Información del Cliente", 18, 52);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...secondaryColor);
+  doc.text(`Nombre: ${cliente.nombres} ${cliente.apellidos}`, 18, 58);
+  doc.text(`ID/Cédula: ${cliente.cedula}`, 18, 64);
+  doc.text(`Teléfono: ${cliente.telefonoPrincipal}`, 18, 70);
   
-  // Columna Derecha
-  doc.text(`Tasa de Interés: ${prestamo.tasaInteres}% Mensual`, pageWidth / 2, 55);
-  doc.text(`Plazo: ${prestamo.plazoMeses} Cuotas`, pageWidth / 2, 62);
-  doc.text(`Total a Pagar: ${formatMoney(prestamo.totalDevolver, empresa?.moneda)}`, pageWidth / 2, 69);
+  // Columna Derecha (Crédito)
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...primaryColor);
+  doc.text("Detalles del Crédito", pageWidth / 2 + 10, 52);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...secondaryColor);
+  doc.text(`Monto Aprobado: ${formatMoney(prestamo.montoOriginal, empresa?.moneda)}`, pageWidth / 2 + 10, 58);
+  doc.text(`Tasa: ${prestamo.tasaInteres}% ${prestamo.tipoInteres} | Plazo: ${prestamo.plazoMeses} Cuotas`, pageWidth / 2 + 10, 64);
+  doc.text(`Total a Devolver: ${formatMoney(prestamo.totalDevolver, empresa?.moneda)}`, pageWidth / 2 + 10, 70);
 
   // Tabla de Amortización
-  doc.text("Tabla de Pagos Programados:", 14, 85);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(...primaryColor);
+  doc.text("Cronograma de Pagos", 14, 85);
 
   const tablaBody = cuotas.map(c => [
     c.numero,
     format(new Date(c.fechaVencimiento), "dd/MM/yyyy"),
     formatMoney(c.monto, empresa?.moneda),
+    formatMoney(c.capital || 0, empresa?.moneda),
+    formatMoney(c.interes || 0, empresa?.moneda),
     formatMoney(c.saldoPendienteAntes || 0, empresa?.moneda)
   ]);
 
   autoTable(doc, {
     startY: 90,
-    head: [["N°", "Vencimiento", "Monto Cuota", "Saldo Restante"]],
+    head: [["N°", "Vencimiento", "Cuota Total", "Abono Capital", "Interés", "Saldo Restante"]],
     body: tablaBody,
     theme: 'striped',
-    headStyles: { fillColor: [40, 40, 40] },
-    styles: { fontSize: 9 },
+    headStyles: { fillColor: primaryColor, textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] }, // Slate 50
+    styles: { fontSize: 9, cellPadding: 4, textColor: [51, 65, 85] }, // Slate 700
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 12 },
+      1: { halign: 'center' },
+      2: { halign: 'right', fontStyle: 'bold' },
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right', fontStyle: 'bold', textColor: primaryColor }
+    },
+    didDrawPage: function (data) {
+      // Paginación
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text(
+        `Página ${data.pageNumber} • Generado por Finova`,
+        pageWidth / 2,
+        pageHeight - 10,
+        { align: "center" }
+      );
+    }
   });
 
   // Pie de página (Firmas)
   const finalY = (doc as any).lastAutoTable.finalY || 200;
   
-  if (finalY < 240) {
+  if (finalY < pageHeight - 50) {
+    doc.setDrawColor(...secondaryColor);
+    doc.setLineWidth(0.5);
+    
     doc.line(30, finalY + 40, 80, finalY + 40);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
     doc.text("Firma del Cliente", 55, finalY + 45, { align: "center" });
 
     doc.line(pageWidth - 80, finalY + 40, pageWidth - 30, finalY + 40);
-    doc.text(`Firma por ${empresa?.nombre || "Empresa"}`, pageWidth - 55, finalY + 45, { align: "center" });
+    doc.text(`Firma por ${empresa?.nombre || "Financiera"}`, pageWidth - 55, finalY + 45, { align: "center" });
   }
 
-  doc.save(`Credito_${cliente.nombres}_${prestamo.id.substring(0,6)}.pdf`);
+  doc.save(`Amortizacion_${cliente.nombres}_${prestamo.id.substring(0,6)}.pdf`);
 };
