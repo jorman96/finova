@@ -42,6 +42,15 @@ export default function ReportesPage() {
     
     const data: any = {};
     
+    // Diccionario de clientes para inyectar nombres
+    const qClientes = query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId));
+    const snapClientes = await getDocs(qClientes);
+    const clientesMap = new Map();
+    snapClientes.docs.forEach(doc => {
+      const c = doc.data();
+      clientesMap.set(doc.id, `${c.nombres} ${c.apellidos}`);
+    });
+    
     // 1. Cobros (Pagos en el rango de fechas)
     if (incluirCobros || incluirResumen) {
       const qPagos = query(
@@ -78,7 +87,10 @@ export default function ReportesPage() {
       
       // Filtrar en memoria por estado y fecha de vencimiento
       data.mora = snapMora.docs
-        .map(doc => ({ id: doc.id, ...doc.data() as any }))
+        .map(doc => {
+          const d = doc.data() as any;
+          return { id: doc.id, clienteNombre: clientesMap.get(d.clienteId) || "Desconocido", ...d };
+        })
         .filter((d: any) => 
           (d.estado === 'pendiente' || d.estado === 'vencida' || d.estado === 'parcial') && 
           d.fechaVencimiento < todayStr
@@ -148,7 +160,7 @@ export default function ReportesPage() {
       if (incluirMora && data.mora) {
         const moraData = data.mora.map((m: any) => ({
           "Préstamo ID": m.prestamoId,
-          "Cliente ID": m.clienteId,
+          "Cliente": m.clienteNombre,
           "Cuota No.": m.numeroCuota,
           "Vencimiento": m.fechaVencimiento,
           "Monto Cuota": m.totalCuota,
@@ -238,14 +250,14 @@ export default function ReportesPage() {
 
         const tableBody = data.mora.map((m: any) => [
           m.fechaVencimiento,
-          m.clienteId.slice(0, 6) + '...', // No tenemos nombre aquí fácil, mostramos ID
+          m.clienteNombre,
           m.numeroCuota,
           formatMoney(m.totalCuota - m.montoPagado)
         ]);
 
         autoTable(doc, {
           startY: currentY,
-          head: [['Vencimiento', 'Ref. Cliente', 'Cuota', 'Deuda']],
+          head: [['Vencimiento', 'Cliente', 'Cuota', 'Deuda']],
           body: tableBody,
           theme: 'striped',
           headStyles: { fillColor: [231, 76, 60] }
