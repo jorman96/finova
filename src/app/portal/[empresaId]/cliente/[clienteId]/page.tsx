@@ -5,7 +5,7 @@ import { ScoreGauge } from "@/components/clientes/ScoreGauge";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { LogOut, Calendar, DollarSign, AlertCircle, CheckCircle } from "lucide-react";
+import { LogOut, Calendar, DollarSign, AlertCircle, CheckCircle, Percent, Clock, Target, Banknote } from "lucide-react";
 import Link from "next/link";
 
 export default async function PortalClienteDashboard({ params }: { params: Promise<{ empresaId: string, clienteId: string }> }) {
@@ -126,7 +126,12 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {prestamosConCuotas.map((p: any) => (
+            {prestamosConCuotas.map((p: any) => {
+              const montoFinanciado = p.totalPagar || p.montoOriginal || p.monto;
+              const montoPagado = montoFinanciado - (p.saldoRestante || 0);
+              const porcentajeProgreso = montoFinanciado > 0 ? Math.min(100, Math.max(0, (montoPagado / montoFinanciado) * 100)) : 0;
+
+              return (
               <Card key={p.id} className={`shadow-sm border-l-4 ${p.estado === 'moroso' ? 'border-l-destructive' : 'border-l-primary'}`}>
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
@@ -139,9 +144,42 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="flex justify-between text-sm border-b pb-2">
-                      <span className="text-muted-foreground">Saldo Restante</span>
-                      <span className="font-bold">{formatMoney(p.saldoRestante)}</span>
+                    {/* Detalles Financieros en Cuadrícula */}
+                    <div className="grid grid-cols-2 gap-3 bg-muted/50 p-3 rounded-lg border mb-2">
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Banknote className="h-3 w-3"/> Total a Devolver</span>
+                        <span className="text-sm font-semibold">{formatMoney(montoFinanciado)}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Percent className="h-3 w-3"/> Interés</span>
+                        <span className="text-sm font-semibold">{p.tasaInteres}% {p.periodoTasa === 'anual' ? 'Anual' : 'Mensual'} <span className="text-xs font-normal">({p.tipoInteres === 'fijo' ? 'Fijo' : 'Saldo'})</span></span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3"/> Frecuencia</span>
+                        <span className="text-sm font-semibold capitalize">{p.frecuenciaPago || 'Mensual'}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1"><Target className="h-3 w-3"/> Plazo</span>
+                        <span className="text-sm font-semibold">{p.numeroCuotas} Cuotas</span>
+                      </div>
+                    </div>
+
+                    {/* Barra de Progreso */}
+                    <div className="space-y-1.5 pb-3 border-b">
+                      <div className="flex justify-between text-xs font-medium mb-1">
+                        <span>Progreso de Pago</span>
+                        <span className="text-primary">{porcentajeProgreso.toFixed(1)}%</span>
+                      </div>
+                      <div className="h-2.5 w-full bg-muted rounded-full overflow-hidden relative">
+                        <div 
+                          className="absolute left-0 top-0 h-full bg-primary transition-all duration-500 ease-in-out" 
+                          style={{ width: `${porcentajeProgreso}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground pt-1">
+                        <span>Pagado: {formatMoney(montoPagado)}</span>
+                        <span>Restante: {formatMoney(p.saldoRestante)}</span>
+                      </div>
                     </div>
                     
                     {p.proximaCuota ? (
@@ -172,7 +210,8 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         )}
 
