@@ -97,12 +97,14 @@ export default function DashboardLayout({
           <p className="text-sm font-medium truncate">{user.email}</p>
           <p className="text-xs text-muted-foreground">Administrador</p>
         </div>
-        <Button variant="outline" className="w-full justify-start text-muted-foreground hover:text-foreground" onClick={handleLogout}>
-          <LogOut className="mr-2 h-4 w-4" />
-          Cerrar Sesión
-        </Button>
-        <div className="text-center pt-2 mt-2">
-          <p className="text-[10px] text-muted-foreground/50 font-medium tracking-wide">Developed by Jorman © {new Date().getFullYear()}</p>
+        <div className="flex flex-col gap-0.5">
+          <Button variant="outline" className="w-full justify-start text-muted-foreground hover:text-foreground mb-0" onClick={handleLogout}>
+            <LogOut className="mr-2 h-4 w-4" />
+            Cerrar Sesión
+          </Button>
+          <div className="text-center">
+            <p className="text-[10px] text-muted-foreground/50 font-medium tracking-wide">Developed by Jorman Castro © {new Date().getFullYear()}</p>
+          </div>
         </div>
       </div>
     </>

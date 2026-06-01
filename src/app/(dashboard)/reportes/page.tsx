@@ -272,7 +272,7 @@ export default function ReportesPage() {
         doc.setFontSize(8);
         doc.setTextColor(148, 163, 184); // Slate 400
         doc.text(
-          `Página ${i} de ${pageCount} • Software by Jorman © ${new Date().getFullYear()}`,
+          `Página ${i} de ${pageCount} • Software by Jorman Castro © ${new Date().getFullYear()}`,
           doc.internal.pageSize.width / 2,
           doc.internal.pageSize.height - 10,
           { align: "center" }
