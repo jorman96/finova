@@ -26,6 +26,7 @@ export function NuevoPrestamoDialog() {
   const [clienteId, setClienteId] = useState("");
   const [monto, setMonto] = useState("");
   const [tasaInteres, setTasaInteres] = useState("");
+  const [periodoTasa, setPeriodoTasa] = useState<'mensual'|'anual'>('mensual');
   const [tipoInteres, setTipoInteres] = useState<'fijo' | 'saldo_deudor'>('fijo');
   const [frecuenciaPago, setFrecuenciaPago] = useState<'diario'|'semanal'|'quincenal'|'mensual'>('mensual');
   const [numeroCuotas, setNumeroCuotas] = useState("");
@@ -51,6 +52,7 @@ export function NuevoPrestamoDialog() {
     const input: AmortizationInput = {
       monto: Number(monto),
       tasaInteres: Number(tasaInteres),
+      periodoTasa,
       tipoInteres,
       frecuenciaPago,
       numeroCuotas: Number(numeroCuotas),
@@ -89,6 +91,7 @@ export function NuevoPrestamoDialog() {
         clienteNombre: `${clienteSeleccionado?.nombres} ${clienteSeleccionado?.apellidos}`,
         monto: Number(monto),
         tasaInteres: Number(tasaInteres),
+        periodoTasa,
         tipoInteres,
         frecuenciaPago,
         numeroCuotas: Number(numeroCuotas),
@@ -175,7 +178,16 @@ export function NuevoPrestamoDialog() {
             </div>
             <div className="space-y-2">
               <Label>Tasa de Interés (%)</Label>
-              <Input type="number" step="0.01" value={tasaInteres} onChange={e => setTasaInteres(e.target.value)} required />
+              <div className="flex gap-2">
+                <Input type="number" step="0.01" value={tasaInteres} onChange={e => setTasaInteres(e.target.value)} required className="flex-1" />
+                <Select value={periodoTasa} onValueChange={(val: any) => val && setPeriodoTasa(val)}>
+                  <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mensual">Mensual</SelectItem>
+                    <SelectItem value="anual">Anual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Tipo de Interés</Label>

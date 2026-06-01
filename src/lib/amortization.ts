@@ -2,7 +2,8 @@ import { addDays, addWeeks, addMonths, parseISO, format } from "date-fns";
 
 export interface AmortizationInput {
   monto: number;
-  tasaInteres: number; // Tasa por periodo de cuota
+  tasaInteres: number; // Tasa nominal ingresada
+  periodoTasa?: 'mensual' | 'anual'; // El periodo de la tasa ingresada
   tipoInteres: 'fijo' | 'saldo_deudor';
   frecuenciaPago: 'diario' | 'semanal' | 'quincenal' | 'mensual';
   numeroCuotas: number;
@@ -18,18 +19,42 @@ export interface CuotaProyectada {
   saldoPendiente: number;
 }
 
+function calcularTasaPorCuota(tasaInput: number, periodoTasa: string, frecuenciaPago: string): number {
+  let tasaMensual = tasaInput;
+
+  // Convertir todo a tasa mensual primero como base
+  if (periodoTasa === 'anual') {
+    tasaMensual = tasaInput / 12;
+  }
+
+  // Fraccionar la tasa mensual según la frecuencia de pago usando año comercial (360 días)
+  switch (frecuenciaPago) {
+    case 'diario':
+      return tasaMensual / 30;
+    case 'semanal':
+      return tasaMensual / 4.333333; // 52 semanas / 12 meses
+    case 'quincenal':
+      return tasaMensual / 2;
+    case 'mensual':
+      return tasaMensual;
+    default:
+      return tasaMensual;
+  }
+}
+
 export function generateAmortizationTable(input: AmortizationInput): CuotaProyectada[] {
-  const { monto, tasaInteres, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago } = input;
+  const { monto, tasaInteres, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago, periodoTasa = 'mensual' } = input;
   
   const cuotas: CuotaProyectada[] = [];
   let saldoActual = monto;
   let fechaActual = parseISO(fechaPrimerPago);
-  const tasaDecimal = tasaInteres / 100;
+  
+  // Convertir la tasa nominal a la tasa efectiva decimal por periodo de cuota
+  const tasaEfectivaDecimal = calcularTasaPorCuota(tasaInteres, periodoTasa, frecuenciaPago) / 100;
 
   if (tipoInteres === 'fijo') {
-    // Interés simple directo sobre el monto inicial (ej. 10% del préstamo = monto * 0.10, si la tasaInteres es por cuota)
-    // Usualmente "fijo" en prestamos informales significa que cada cuota tiene el mismo interes
-    const interesPorCuota = monto * tasaDecimal;
+    // Interés simple
+    const interesPorCuota = monto * tasaEfectivaDecimal;
     const capitalPorCuota = monto / numeroCuotas;
     const cuotaFija = capitalPorCuota + interesPorCuota;
 
@@ -46,12 +71,12 @@ export function generateAmortizationTable(input: AmortizationInput): CuotaProyec
       fechaActual = getNextDate(fechaActual, frecuenciaPago);
     }
   } else if (tipoInteres === 'saldo_deudor') {
-    // Sistema francés (amortización sobre saldo)
-    let cuotaFija = monto * (tasaDecimal * Math.pow(1 + tasaDecimal, numeroCuotas)) / (Math.pow(1 + tasaDecimal, numeroCuotas) - 1);
-    if (tasaDecimal === 0) cuotaFija = monto / numeroCuotas;
+    // Sistema francés
+    let cuotaFija = monto * (tasaEfectivaDecimal * Math.pow(1 + tasaEfectivaDecimal, numeroCuotas)) / (Math.pow(1 + tasaEfectivaDecimal, numeroCuotas) - 1);
+    if (tasaEfectivaDecimal === 0) cuotaFija = monto / numeroCuotas;
 
     for (let i = 1; i <= numeroCuotas; i++) {
-      const interes = saldoActual * tasaDecimal;
+      const interes = saldoActual * tasaEfectivaDecimal;
       const capital = cuotaFija - interes;
       saldoActual -= capital;
       
