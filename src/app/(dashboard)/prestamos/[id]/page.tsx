@@ -1,23 +1,29 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { doc, getDoc, collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Prestamo, Cuota } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CreditCard, CheckCircle, AlertCircle, Clock, FileText } from "lucide-react";
+import { ArrowLeft, CreditCard, CheckCircle, AlertCircle, Clock, FileText, Trash2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { RegistrarPagoDialog } from "@/components/pagos/RegistrarPagoDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function PrestamoDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const { id } = resolvedParams;
+  const { userData } = useAuth();
   const [prestamo, setPrestamo] = useState<Prestamo | null>(null);
   const [cuotas, setCuotas] = useState<Cuota[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
 
   const fetchData = async () => {
@@ -39,6 +45,34 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeletePrestamo = async () => {
+    if (!prestamo) return;
+    setIsDeleting(true);
+    try {
+      const batch = writeBatch(db);
+
+      // Eliminar Cuotas
+      const cuotasSnap = await getDocs(query(collection(db, "cuotas"), where("prestamoId", "==", id)));
+      cuotasSnap.forEach(docSnap => batch.delete(docSnap.ref));
+
+      // Eliminar Pagos
+      const pagosSnap = await getDocs(query(collection(db, "pagos"), where("prestamoId", "==", id)));
+      pagosSnap.forEach(docSnap => batch.delete(docSnap.ref));
+
+      // Eliminar Préstamo
+      batch.delete(doc(db, "prestamos", id));
+
+      await batch.commit();
+      toast.success("Préstamo eliminado exitosamente.");
+      setDeleteModalOpen(false);
+      router.push("/prestamos");
+    } catch (error) {
+      console.error("Error eliminando préstamo:", error);
+      toast.error("Error al eliminar el crédito.");
+      setIsDeleting(false);
     }
   };
 
@@ -106,6 +140,11 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           </Button>
           {prestamo.estado !== 'completado' && (
             <RegistrarPagoDialog prestamo={prestamo} cuotas={cuotas} onPagoRegistrado={fetchData} />
+          )}
+          {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
+            <Button variant="destructive" onClick={() => setDeleteModalOpen(true)}>
+              <Trash2 className="mr-2 h-4 w-4" /> Eliminar Crédito
+            </Button>
           )}
         </div>
       </div>
@@ -189,6 +228,24 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive">¿Eliminar este préstamo por completo?</DialogTitle>
+            <DialogDescription>
+              Esta acción es <strong>irreversible</strong>. Se eliminará el préstamo, junto con todas sus cuotas y cualquier pago registrado, desapareciendo del sistema por completo. Úselo solo para corregir créditos creados por error.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setDeleteModalOpen(false)} disabled={isDeleting}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeletePrestamo} disabled={isDeleting}>
+              {isDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Sí, eliminar definitivamente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
