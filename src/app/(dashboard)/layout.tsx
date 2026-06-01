@@ -19,11 +19,18 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
     }
   }, [user, loading, router]);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   if (loading || !user) {
     return (
@@ -97,13 +104,6 @@ export default function DashboardLayout({
       </div>
     </>
   );
-
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Close mobile menu on route change
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
