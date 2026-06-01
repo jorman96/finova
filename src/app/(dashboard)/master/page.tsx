@@ -408,9 +408,9 @@ export default function MasterPanelPage() {
                   />
                 </div>
                 <Dialog open={openCreateEmpresa} onOpenChange={setOpenCreateEmpresa}>
-                  <DialogTrigger asChild>
-                    <Button><PlusCircle className="mr-2 h-4 w-4" /> Nuevo Inquilino</Button>
-                  </DialogTrigger>
+                  <Button onClick={() => setOpenCreateEmpresa(true)}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Nuevo Inquilino
+                  </Button>
                   <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>Registrar Nueva Financiera</DialogTitle>
