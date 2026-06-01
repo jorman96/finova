@@ -61,7 +61,7 @@ export default function DashboardLayout({
     navItems.push({ name: "Súper Admin", href: "/master", icon: Users });
   }
 
-  const SidebarContent = () => (
+  const sidebarContent = (
     <>
       <div className="h-16 flex items-center px-4 border-b">
         <div className="flex items-center gap-2 text-primary">
@@ -110,7 +110,7 @@ export default function DashboardLayout({
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* Sidebar Desktop */}
       <aside className="w-52 border-r bg-card hidden md:flex flex-col shadow-sm transition-all duration-300">
-        <SidebarContent />
+        {sidebarContent}
       </aside>
 
       {/* Main Content */}
@@ -125,7 +125,7 @@ export default function DashboardLayout({
               <SheetContent side="left" className="w-64 p-0 flex flex-col">
                 <SheetTitle className="sr-only">Menú de Navegación</SheetTitle>
                 <SheetDescription className="sr-only">Navega por las opciones de Finova</SheetDescription>
-                <SidebarContent />
+                {sidebarContent}
               </SheetContent>
             </Sheet>
             <DollarSign className="h-6 w-6" />
