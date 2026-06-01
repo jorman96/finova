@@ -40,14 +40,15 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
   const prestamosConCuotas = await Promise.all(prestamosActivos.map(async (p: any) => {
     const cuotasSnap = await adminDb.collection("cuotas")
       .where("prestamoId", "==", p.id)
-      .where("estado", "in", ["pendiente", "vencida", "parcial"])
-      .orderBy("numeroCuota", "asc")
-      .limit(1)
       .get();
+    
+    const cuotasList = cuotasSnap.docs.map(d => d.data());
+    const cuotasPendientes = cuotasList.filter(c => ["pendiente", "vencida", "parcial"].includes(c.estado));
+    cuotasPendientes.sort((a, b) => a.numeroCuota - b.numeroCuota);
     
     return {
       ...p,
-      proximaCuota: cuotasSnap.empty ? null : cuotasSnap.docs[0].data()
+      proximaCuota: cuotasPendientes.length > 0 ? cuotasPendientes[0] : null
     };
   }));
 
@@ -194,8 +195,8 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                   <CardContent>
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm border-b pb-2">
-                        <span className="text-muted-foreground">Monto Financiado</span>
-                        <span className="font-medium">{formatMoney(p.montoTotal)}</span>
+                        <span className="text-muted-foreground">Monto a Devolver</span>
+                        <span className="font-medium">{formatMoney(p.totalPagar || p.montoOriginal || p.monto)}</span>
                       </div>
                       <div className="flex justify-between text-sm pt-1">
                         <span className="text-muted-foreground">Cuotas Totales</span>
