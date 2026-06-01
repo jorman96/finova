@@ -79,7 +79,10 @@ export default function ReportesPage() {
       // Filtrar en memoria por estado y fecha de vencimiento
       data.mora = snapMora.docs
         .map(doc => ({ id: doc.id, ...doc.data() as any }))
-        .filter((d: any) => (d.estado === 'vencida' || d.estado === 'parcial') && d.fechaVencimiento < todayStr);
+        .filter((d: any) => 
+          (d.estado === 'pendiente' || d.estado === 'vencida' || d.estado === 'parcial') && 
+          d.fechaVencimiento < todayStr
+        );
     }
 
     return data;
