@@ -46,24 +46,24 @@ export default function ReportesPage() {
     if (incluirCobros || incluirResumen) {
       const qPagos = query(
         collection(db, "pagos"),
-        where("empresaId", "==", userData.empresaId),
-        where("fechaStr", ">=", fechaInicio),
-        where("fechaStr", "<=", fechaFin),
-        orderBy("fechaStr", "asc")
+        where("empresaId", "==", userData.empresaId)
       );
       const snapPagos = await getDocs(qPagos);
-      data.pagos = snapPagos.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const todosPagos = snapPagos.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+      
+      // Filtrar en memoria para evitar errores de índices compuestos en Firebase
+      data.pagos = todosPagos
+        .filter(p => p.fechaStr >= fechaInicio && p.fechaStr <= fechaFin)
+        .sort((a, b) => a.fechaStr.localeCompare(b.fechaStr));
     }
 
-    // 2. Préstamos Otorgados en el rango (usamos createdAt si lo hay, o filtramos en memoria por fechaPrimerPago aproximada)
+    // 2. Préstamos Otorgados en el rango
     if (incluirPrestamos || incluirResumen) {
       const qPrestamos = query(
         collection(db, "prestamos"),
         where("empresaId", "==", userData.empresaId)
       );
       const snapPrestamos = await getDocs(qPrestamos);
-      // Filtramos en memoria los que se crearon en la fecha (si guardamos createdAt) o todos los activos
-      // Como no tenemos createdAt fiable indexado, mostraremos todos los prestamos activos y completados
       data.prestamos = snapPrestamos.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
@@ -71,14 +71,15 @@ export default function ReportesPage() {
     if (incluirMora || incluirResumen) {
       const qMora = query(
         collection(db, "cuotas"),
-        where("empresaId", "==", userData.empresaId),
-        where("estado", "in", ["vencida", "parcial"])
+        where("empresaId", "==", userData.empresaId)
       );
       const snapMora = await getDocs(qMora);
       const todayStr = format(new Date(), "yyyy-MM-dd");
+      
+      // Filtrar en memoria por estado y fecha de vencimiento
       data.mora = snapMora.docs
         .map(doc => ({ id: doc.id, ...doc.data() as any }))
-        .filter((d: any) => d.fechaVencimiento < todayStr);
+        .filter((d: any) => (d.estado === 'vencida' || d.estado === 'parcial') && d.fechaVencimiento < todayStr);
     }
 
     return data;
