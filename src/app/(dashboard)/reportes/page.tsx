@@ -114,6 +114,7 @@ export default function ReportesPage() {
         const prestamosData = data.prestamos.map((p: any) => ({
           "ID": p.id,
           "Cliente": p.clienteNombre || "N/A",
+          "Fecha Otorgamiento": p.fechaDesembolso || "N/A",
           "Estado": p.estado,
           "Monto Original": p.monto,
           "Tasa (%)": p.tasaInteres,

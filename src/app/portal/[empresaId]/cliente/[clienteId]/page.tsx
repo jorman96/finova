@@ -137,7 +137,7 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle className="text-lg">Crédito {formatMoney(p.monto)}</CardTitle>
-                      <CardDescription>Otorgado el {format(new Date(p.createdAt?.toDate?.() || p.fechaAprobacion || new Date()), "dd MMM yyyy", { locale: es })}</CardDescription>
+                      <CardDescription>Otorgado el {p.fechaDesembolso ? format(new Date(p.fechaDesembolso), "dd MMM yyyy", { locale: es }) : format(new Date(p.createdAt?.toDate?.() || new Date()), "dd MMM yyyy", { locale: es })}</CardDescription>
                     </div>
                     <Badge variant={p.estado === 'moroso' ? 'destructive' : 'default'}>{p.estado.toUpperCase()}</Badge>
                   </div>

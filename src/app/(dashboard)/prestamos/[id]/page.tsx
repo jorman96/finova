@@ -158,6 +158,10 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between border-b pb-2">
+              <span className="text-muted-foreground text-sm">Fecha Otorgamiento</span>
+              <span className="font-medium">{prestamo.fechaDesembolso || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between border-b pb-2">
               <span className="text-muted-foreground text-sm">Monto Solicitado</span>
               <span className="font-medium">${prestamo.monto.toFixed(2)}</span>
             </div>

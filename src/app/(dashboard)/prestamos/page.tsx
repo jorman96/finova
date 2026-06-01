@@ -79,6 +79,7 @@ export default function PrestamosPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Cliente</TableHead>
+              <TableHead>Fecha Otorgamiento</TableHead>
               <TableHead>Monto Inicial</TableHead>
               <TableHead>Saldo Restante</TableHead>
               <TableHead>Frecuencia</TableHead>
@@ -89,13 +90,13 @@ export default function PrestamosPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   Cargando préstamos...
                 </TableCell>
               </TableRow>
             ) : filteredPrestamos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   No se encontraron préstamos.
                 </TableCell>
               </TableRow>
@@ -105,6 +106,7 @@ export default function PrestamosPage() {
                   <TableCell className="font-medium">
                     {prestamo.clienteNombre}
                   </TableCell>
+                  <TableCell>{prestamo.fechaDesembolso || 'N/A'}</TableCell>
                   <TableCell>${prestamo.monto.toFixed(2)}</TableCell>
                   <TableCell className="font-bold text-primary">
                     ${prestamo.saldoRestante.toFixed(2)}
