@@ -161,7 +161,14 @@ export function NuevoPrestamoDialog() {
             <Label>Cliente</Label>
             <Select value={clienteId} onValueChange={(val) => val && setClienteId(val)}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccione un cliente" />
+                <SelectValue placeholder="Seleccione un cliente">
+                  {clienteId && clientes.length > 0
+                    ? (() => {
+                        const c = clientes.find((cli) => cli.id === clienteId);
+                        return c ? `${c.nombres} ${c.apellidos} - ${c.cedula}` : "Seleccione un cliente";
+                      })()
+                    : "Seleccione un cliente"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {clientes.map(c => (
