@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { collection, query, getDocs, addDoc, serverTimestamp, doc, updateDoc, getCountFromServer } from "firebase/firestore";
+import { collection, query, getDocs, addDoc, serverTimestamp, doc, updateDoc, getCountFromServer, where } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Building2, Loader2, Users, ShieldAlert, CheckCircle2, UserPlus, CreditCard, Activity, PauseCircle } from "lucide-react";
+import { Building2, Loader2, Users, ShieldAlert, CheckCircle2, UserPlus, CreditCard, Activity, PauseCircle, Eye } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -45,6 +45,11 @@ export default function MasterPanelPage() {
   const [newUser, setNewUser] = useState({ nombre: "", email: "", password: "", documento: "", telefono: "" });
   const [creatingUser, setCreatingUser] = useState(false);
 
+  // Details Modal
+  const [openDetailsModal, setOpenDetailsModal] = useState(false);
+  const [selectedEmpresaDetails, setSelectedEmpresaDetails] = useState<any>(null);
+  const [savingDetails, setSavingDetails] = useState(false);
+
   useEffect(() => {
     if (!authLoading && userData?.rol !== "superadmin") {
       router.push("/dashboard");
@@ -57,7 +62,18 @@ export default function MasterPanelPage() {
       const q = query(collection(db, "empresas"));
       const snap = await getDocs(q);
       const empresasData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setEmpresas(empresasData);
+
+      // Cargar Dueños
+      const qDuenos = query(collection(db, "usuarios"), where("rol", "==", "dueño"));
+      const snapDuenos = await getDocs(qDuenos);
+      const duenosData = snapDuenos.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const empresasConDueno = empresasData.map(emp => {
+        const dueno = duenosData.find(d => d.empresaId === emp.id);
+        return { ...emp, dueno };
+      });
+
+      setEmpresas(empresasConDueno);
 
       // Cargar Métricas Globales
       const clientesCount = await getCountFromServer(collection(db, "clientes"));
@@ -86,6 +102,23 @@ export default function MasterPanelPage() {
 
     setCreando(true);
     try {
+      // Validar duplicados
+      const qNombre = query(collection(db, "empresas"), where("nombre", "==", nuevaEmpresa.nombre));
+      const snapNombre = await getDocs(qNombre);
+      if (!snapNombre.empty) {
+        toast.error("Ya existe una empresa con este nombre comercial.");
+        setCreando(false);
+        return;
+      }
+
+      const qRuc = query(collection(db, "empresas"), where("identificacionFiscal", "==", nuevaEmpresa.identificacionFiscal));
+      const snapRuc = await getDocs(qRuc);
+      if (!snapRuc.empty) {
+        toast.error("Ya existe una empresa con esta identificación fiscal.");
+        setCreando(false);
+        return;
+      }
+
       await addDoc(collection(db, "empresas"), {
         ...nuevaEmpresa,
         estado: "activa",
@@ -144,6 +177,32 @@ export default function MasterPanelPage() {
       toast.error(error.message);
     } finally {
       setCreatingUser(false);
+    }
+  };
+
+  const handleSaveDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmpresaDetails) return;
+    setSavingDetails(true);
+    try {
+      // Guardar Empresa
+      const { id, dueno, ...empresaData } = selectedEmpresaDetails;
+      await updateDoc(doc(db, "empresas", id), empresaData);
+
+      // Guardar Dueño (si existe y fue editado)
+      if (dueno?.id) {
+        const { id: duenoId, ...duenoData } = dueno;
+        await updateDoc(doc(db, "usuarios", duenoId), duenoData);
+      }
+
+      toast.success("Detalles actualizados exitosamente.");
+      setOpenDetailsModal(false);
+      loadData();
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al guardar los detalles.");
+    } finally {
+      setSavingDetails(false);
     }
   };
 
@@ -316,15 +375,27 @@ export default function MasterPanelPage() {
                       </div>
                       <div className="flex gap-2">
                         <Button 
-                          variant="outline" 
+                          variant="secondary" 
                           size="sm"
                           onClick={() => {
-                            setSelectedEmpresaId(emp.id);
-                            setOpenUserModal(true);
+                            setSelectedEmpresaDetails(emp);
+                            setOpenDetailsModal(true);
                           }}
                         >
-                          <UserPlus className="mr-2 h-4 w-4" /> Asignar Dueño
+                          <Eye className="mr-2 h-4 w-4" /> Detalles
                         </Button>
+                        {!emp.dueno && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              setSelectedEmpresaId(emp.id);
+                              setOpenUserModal(true);
+                            }}
+                          >
+                            <UserPlus className="mr-2 h-4 w-4" /> Asignar Dueño
+                          </Button>
+                        )}
                         <Button 
                           variant={emp.estado === 'activa' ? 'destructive' : 'default'}
                           size="sm"
@@ -385,6 +456,187 @@ export default function MasterPanelPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={openDetailsModal} onOpenChange={setOpenDetailsModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalles del Inquilino (360°)</DialogTitle>
+            <DialogDescription>
+              Información legal, comercial y de contacto de la financiera y su dueño. Puedes editar los campos y guardar los cambios.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedEmpresaDetails && (
+            <form onSubmit={handleSaveDetails} className="space-y-6">
+              <div className="grid md:grid-cols-2 gap-6">
+                
+                {/* Columna Izquierda: Empresa */}
+                <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
+                  <h3 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary" /> Datos de la Empresa
+                  </h3>
+                  <div className="space-y-2">
+                    <Label>Nombre Comercial</Label>
+                    <Input 
+                      value={selectedEmpresaDetails.nombre} 
+                      onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, nombre: e.target.value})} 
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Razón Social</Label>
+                    <Input 
+                      value={selectedEmpresaDetails.razonSocial || ""} 
+                      onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, razonSocial: e.target.value})} 
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>RUC / NIT</Label>
+                      <Input 
+                        value={selectedEmpresaDetails.identificacionFiscal} 
+                        onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, identificacionFiscal: e.target.value})} 
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>País</Label>
+                      <Input 
+                        value={selectedEmpresaDetails.pais || ""} 
+                        onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, pais: e.target.value})} 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Dirección Física</Label>
+                    <Input 
+                      value={selectedEmpresaDetails.direccion || ""} 
+                      onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, direccion: e.target.value})} 
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Teléfono</Label>
+                      <Input 
+                        type="tel"
+                        value={selectedEmpresaDetails.telefono || ""} 
+                        onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, telefono: e.target.value})} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Moneda</Label>
+                      <Input 
+                        value={selectedEmpresaDetails.moneda || ""} 
+                        onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, moneda: e.target.value})} 
+                        required 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Correo Institucional</Label>
+                    <Input 
+                      type="email"
+                      value={selectedEmpresaDetails.email || ""} 
+                      onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, email: e.target.value})} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Plan de Suscripción</Label>
+                    <Select value={selectedEmpresaDetails.plan} onValueChange={(val) => setSelectedEmpresaDetails({...selectedEmpresaDetails, plan: val})}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="basico">Básico</SelectItem>
+                        <SelectItem value="pro">Pro</SelectItem>
+                        <SelectItem value="premium">Premium</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Columna Derecha: Dueño */}
+                <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
+                  <h3 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" /> Datos del Dueño
+                  </h3>
+                  
+                  {selectedEmpresaDetails.dueno ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Nombre Completo</Label>
+                        <Input 
+                          value={selectedEmpresaDetails.dueno.nombre} 
+                          onChange={e => setSelectedEmpresaDetails({
+                            ...selectedEmpresaDetails, 
+                            dueno: { ...selectedEmpresaDetails.dueno, nombre: e.target.value }
+                          })} 
+                          required 
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Documento</Label>
+                          <Input 
+                            value={selectedEmpresaDetails.dueno.documento || ""} 
+                            onChange={e => setSelectedEmpresaDetails({
+                              ...selectedEmpresaDetails, 
+                              dueno: { ...selectedEmpresaDetails.dueno, documento: e.target.value }
+                            })} 
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Teléfono</Label>
+                          <Input 
+                            type="tel"
+                            value={selectedEmpresaDetails.dueno.telefono || ""} 
+                            onChange={e => setSelectedEmpresaDetails({
+                              ...selectedEmpresaDetails, 
+                              dueno: { ...selectedEmpresaDetails.dueno, telefono: e.target.value }
+                            })} 
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Correo Electrónico (Login)</Label>
+                        <Input 
+                          type="email"
+                          value={selectedEmpresaDetails.dueno.email} 
+                          disabled
+                          className="bg-muted"
+                        />
+                        <p className="text-xs text-muted-foreground">El correo de login no se puede cambiar por seguridad.</p>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-[200px] text-center space-y-3">
+                      <ShieldAlert className="h-10 w-10 text-muted-foreground" />
+                      <p className="text-muted-foreground">No hay dueño asignado a esta financiera.</p>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          setOpenDetailsModal(false);
+                          setSelectedEmpresaId(selectedEmpresaDetails.id);
+                          setOpenUserModal(true);
+                        }}
+                      >
+                        <UserPlus className="mr-2 h-4 w-4" /> Asignar Dueño Ahora
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setOpenDetailsModal(false)}>Cancelar</Button>
+                <Button type="submit" disabled={savingDetails}>
+                  {savingDetails && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Guardar Cambios
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>
