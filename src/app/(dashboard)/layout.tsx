@@ -9,7 +9,6 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Link from "next/link";
-import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
 export default function DashboardLayout({
   children,
@@ -116,18 +115,32 @@ export default function DashboardLayout({
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="h-16 border-b flex items-center justify-between px-4 md:px-6 bg-card shadow-sm z-10">
-          <div className="md:hidden flex items-center gap-3 text-primary">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger render={<Button variant="ghost" size="icon" className="md:hidden" />}>
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle Menu</span>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-64 p-0 flex flex-col">
-                <SheetTitle className="sr-only">Menú de Navegación</SheetTitle>
-                <SheetDescription className="sr-only">Navega por las opciones de Finova</SheetDescription>
-                {sidebarContent}
-              </SheetContent>
-            </Sheet>
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileMenuOpen(true)}>
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle Menu</span>
+            </Button>
+            
+            {/* Native Tailwind Drawer for Mobile */}
+            {mobileMenuOpen && (
+              <div className="fixed inset-0 z-50 flex md:hidden">
+                <div 
+                  className="fixed inset-0 bg-black/50 transition-opacity" 
+                  onClick={() => setMobileMenuOpen(false)}
+                />
+                <aside className="relative flex w-64 max-w-xs flex-1 flex-col bg-card shadow-xl transition-transform duration-300 transform translate-x-0">
+                  <div className="absolute top-0 right-0 -mr-12 pt-2">
+                    <Button variant="ghost" size="icon" className="text-white hover:bg-white/20" onClick={() => setMobileMenuOpen(false)}>
+                      <span className="sr-only">Cerrar Menú</span>
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </Button>
+                  </div>
+                  {sidebarContent}
+                </aside>
+              </div>
+            )}
+
             <DollarSign className="h-6 w-6" />
             <span className="text-xl font-bold">Finova</span>
           </div>
