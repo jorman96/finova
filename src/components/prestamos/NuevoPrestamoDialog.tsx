@@ -40,8 +40,23 @@ export function NuevoPrestamoDialog() {
       getDocs(query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId))).then(snapshot => {
         setClientes(snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Cliente)));
       });
+      // Resetear el formulario al abrir
+      setClienteId("");
+      setMonto("");
+      setTasaInteres("");
+      setPeriodoTasa("mensual");
+      setTipoInteres("fijo");
+      setFrecuenciaPago("mensual");
+      setNumeroCuotas("");
+      setFechaPrimerPago("");
+      setSimulacion([]);
     }
   }, [open, userData?.empresaId]);
+
+  // Si el usuario cambia cualquier valor financiero, invalidamos la simulación vieja
+  useEffect(() => {
+    setSimulacion([]);
+  }, [monto, tasaInteres, periodoTasa, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago]);
 
   const handleSimular = () => {
     if (!monto || !tasaInteres || !numeroCuotas || !fechaPrimerPago) {
