@@ -115,6 +115,7 @@ export default function DashboardLayout({
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="h-16 border-b flex items-center justify-between px-4 md:px-6 bg-card shadow-sm z-10">
+          <div className="md:hidden flex items-center gap-3 text-primary">
             <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle Menu</span>
