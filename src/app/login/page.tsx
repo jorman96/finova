@@ -99,6 +99,12 @@ export default function LoginPage() {
           </CardFooter>
         </form>
       </Card>
+      
+      <div className="absolute bottom-6 text-center w-full">
+        <p className="text-sm text-muted-foreground/60 font-medium tracking-wide">
+          Developed by Jorman © {new Date().getFullYear()}
+        </p>
+      </div>
     </div>
   );
 }

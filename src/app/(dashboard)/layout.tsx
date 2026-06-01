@@ -101,6 +101,9 @@ export default function DashboardLayout({
           <LogOut className="mr-2 h-4 w-4" />
           Cerrar Sesión
         </Button>
+        <div className="text-center pt-2 mt-2">
+          <p className="text-[10px] text-muted-foreground/50 font-medium tracking-wide">Developed by Jorman © {new Date().getFullYear()}</p>
+        </div>
       </div>
     </>
   );

@@ -201,7 +201,7 @@ export const generarContratoPrestamo = async (
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
       doc.text(
-        `Página ${data.pageNumber} • Generado por Finova`,
+        `Página ${data.pageNumber} • Software by Jorman © ${new Date().getFullYear()}`,
         pageWidth / 2,
         pageHeight - 10,
         { align: "center" }

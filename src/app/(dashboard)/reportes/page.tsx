@@ -265,6 +265,20 @@ export default function ReportesPage() {
         currentY = (doc as any).lastAutoTable.finalY + 15;
       }
 
+      // Add Footer with Copyright to all pages
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184); // Slate 400
+        doc.text(
+          `Página ${i} de ${pageCount} • Software by Jorman © ${new Date().getFullYear()}`,
+          doc.internal.pageSize.width / 2,
+          doc.internal.pageSize.height - 10,
+          { align: "center" }
+        );
+      }
+
       doc.save(`Reporte_Finova_${format(new Date(), "yyyyMMdd")}.pdf`);
       toast.success("PDF generado correctamente");
 
