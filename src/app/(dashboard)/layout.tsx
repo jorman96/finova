@@ -118,11 +118,9 @@ export default function DashboardLayout({
         <header className="h-16 border-b flex items-center justify-between px-4 md:px-6 bg-card shadow-sm z-10">
           <div className="md:hidden flex items-center gap-3 text-primary">
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden">
-                  <Menu className="h-5 w-5" />
-                  <span className="sr-only">Toggle Menu</span>
-                </Button>
+              <SheetTrigger render={<Button variant="ghost" size="icon" className="md:hidden" />}>
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Toggle Menu</span>
               </SheetTrigger>
               <SheetContent side="left" className="w-64 p-0 flex flex-col">
                 <SheetTitle className="sr-only">Menú de Navegación</SheetTitle>
