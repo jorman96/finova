@@ -27,10 +27,10 @@ export default function ConfiguracionPage() {
     tasaMoraDefecto: "5",
     logoUrl: "",
     capitalInicial: 0,
-    cuentasBancarias: [] as { id: string, banco: string, numero: string, tipo: string }[]
+    cuentasBancarias: [] as { id: string, banco: string, numero: string, tipo: string, titular: string }[]
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [nuevoBanco, setNuevoBanco] = useState({ banco: "", numero: "", tipo: "ahorros" });
+  const [nuevoBanco, setNuevoBanco] = useState({ banco: "", numero: "", tipo: "ahorros", titular: "" });
 
   const handleAddBanco = () => {
     if (!nuevoBanco.banco || !nuevoBanco.numero) return;
@@ -39,7 +39,7 @@ export default function ConfiguracionPage() {
       ...nuevoBanco
     };
     setEmpresaData(prev => ({ ...prev, cuentasBancarias: [...(prev.cuentasBancarias || []), newBanco] }));
-    setNuevoBanco({ banco: "", numero: "", tipo: "ahorros" });
+    setNuevoBanco({ banco: "", numero: "", tipo: "ahorros", titular: "" });
   };
 
   const handleRemoveBanco = (id: string) => {
@@ -270,7 +270,11 @@ export default function ConfiguracionPage() {
                     <Label>Número / Identificador</Label>
                     <Input placeholder="Ej. 22001234" value={nuevoBanco.numero} onChange={e => setNuevoBanco({...nuevoBanco, numero: e.target.value})} />
                   </div>
-                  <div className="flex items-end">
+                  <div className="space-y-2">
+                    <Label>Nombre del Titular</Label>
+                    <Input placeholder="Ej. Juan Pérez" value={nuevoBanco.titular} onChange={e => setNuevoBanco({...nuevoBanco, titular: e.target.value})} />
+                  </div>
+                  <div className="flex items-end col-span-2">
                     <Button type="button" onClick={handleAddBanco} className="w-full"><Plus className="mr-2 h-4 w-4" /> Agregar</Button>
                   </div>
                 </div>
@@ -286,7 +290,7 @@ export default function ConfiguracionPage() {
                       <div key={cuenta.id} className="flex items-center justify-between p-3 border rounded bg-background">
                         <div>
                           <p className="font-medium">{cuenta.banco} <span className="text-muted-foreground text-xs uppercase ml-2">({cuenta.tipo})</span></p>
-                          <p className="text-sm font-mono text-muted-foreground">{cuenta.numero}</p>
+                          <p className="text-sm font-mono text-muted-foreground">{cuenta.numero} {cuenta.titular && `- ${cuenta.titular}`}</p>
                         </div>
                         <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveBanco(cuenta.id)}>
                           <Trash2 className="h-4 w-4" />

@@ -15,6 +15,7 @@ export interface CuentaBancaria {
   banco: string;
   numero: string;
   tipo: string;
+  titular: string;
 }
 
 export interface Empresa {

@@ -24,7 +24,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   
-  const [cuentasBancarias, setCuentasBancarias] = useState<{ id: string, banco: string, numero: string, tipo: string }[]>([]);
+  const [cuentasBancarias, setCuentasBancarias] = useState<{ id: string, banco: string, numero: string, tipo: string, titular?: string }[]>([]);
   const [cuentaDestino, setCuentaDestino] = useState("");
 
   useEffect(() => {
@@ -229,8 +229,8 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
                       <SelectItem value="ninguna" disabled>No hay cuentas configuradas</SelectItem>
                     ) : (
                       cuentasBancarias.map(c => (
-                        <SelectItem key={c.id} value={`${c.banco} - ${c.numero}`}>
-                          {c.banco} ({c.tipo}) - {c.numero}
+                        <SelectItem key={c.id} value={`${c.banco} - ${c.numero} (${c.titular || 'Sin titular'})`}>
+                          {c.banco} ({c.tipo}) - {c.numero} {c.titular && `- ${c.titular}`}
                         </SelectItem>
                       ))
                     )}
