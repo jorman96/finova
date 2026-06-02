@@ -18,6 +18,14 @@ export interface CuentaBancaria {
   titular: string;
 }
 
+export interface InyeccionCapital {
+  id: string;
+  monto: number;
+  fecha: string;
+  observaciones: string;
+  registradoPor: string;
+}
+
 export interface Empresa {
   id: string;
   nombre: string; // Nombre Comercial
@@ -30,7 +38,8 @@ export interface Empresa {
   moneda: string;
   plan: 'basico' | 'pro' | 'premium';
   estado: 'activa' | 'suspendida';
-  capitalInicial?: number; // Inversión inicial
+  capitalInicial?: number; // Inversión inicial original
+  inyeccionesCapital?: InyeccionCapital[];
   cuentasBancarias?: CuentaBancaria[];
   createdAt: any;
 }

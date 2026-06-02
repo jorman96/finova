@@ -27,8 +27,11 @@ export default function ConfiguracionPage() {
     tasaMoraDefecto: "5",
     logoUrl: "",
     capitalInicial: 0,
-    cuentasBancarias: [] as { id: string, banco: string, numero: string, tipo: string, titular: string }[]
+    cuentasBancarias: [] as { id: string, banco: string, numero: string, tipo: string, titular: string }[],
+    inyeccionesCapital: [] as { id: string, monto: number, fecha: string, observaciones: string, registradoPor: string }[]
   });
+  const [nuevaInyeccion, setNuevaInyeccion] = useState({ monto: 0, observaciones: "" });
+  const [isInyeccionModalOpen, setIsInyeccionModalOpen] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [nuevoBanco, setNuevoBanco] = useState({ banco: "", numero: "", tipo: "ahorros", titular: "" });
 
@@ -40,6 +43,38 @@ export default function ConfiguracionPage() {
     };
     setEmpresaData(prev => ({ ...prev, cuentasBancarias: [...(prev.cuentasBancarias || []), newBanco] }));
     setNuevoBanco({ banco: "", numero: "", tipo: "ahorros", titular: "" });
+  };
+
+  const handleInyectarCapital = async () => {
+    if (!nuevaInyeccion.monto || nuevaInyeccion.monto <= 0) {
+      toast.error("Ingrese un monto válido");
+      return;
+    }
+    const inyeccion = {
+      id: Date.now().toString(),
+      monto: nuevaInyeccion.monto,
+      fecha: new Date().toISOString(),
+      observaciones: nuevaInyeccion.observaciones || "Aporte de capital",
+      registradoPor: userData?.nombre || "Dueño"
+    };
+    
+    // Save locally first to show in UI
+    const updatedInyecciones = [...(empresaData.inyeccionesCapital || []), inyeccion];
+    setEmpresaData(prev => ({ ...prev, inyeccionesCapital: updatedInyecciones }));
+    
+    // Save to Firestore immediately
+    try {
+      if (userData?.empresaId) {
+        const { doc, setDoc } = await import("firebase/firestore");
+        await setDoc(doc(db, "empresas", userData.empresaId), { inyeccionesCapital: updatedInyecciones }, { merge: true });
+        toast.success("Capital inyectado y guardado correctamente");
+      }
+    } catch (e: any) {
+      toast.error("Error al guardar inyección: " + e.message);
+    }
+    
+    setNuevaInyeccion({ monto: 0, observaciones: "" });
+    setIsInyeccionModalOpen(false);
   };
 
   const handleRemoveBanco = (id: string) => {
@@ -188,15 +223,85 @@ export default function ConfiguracionPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Capital Inicial (Inversión)</Label>
+                  <Label>Capital Inicial (Inversión Inicial)</Label>
                   <Input 
                     type="number"
                     value={empresaData.capitalInicial} 
                     onChange={e => setEmpresaData({...empresaData, capitalInicial: parseFloat(e.target.value) || 0})} 
                     disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
                   />
-                  <p className="text-xs text-muted-foreground">Monto total con el que iniciaste el negocio. Ayudará a calcular tu caja disponible.</p>
+                  <p className="text-xs text-muted-foreground">Monto total con el que iniciaste el negocio originalmente.</p>
                 </div>
+
+                {userData?.empresaId && (
+                  <div className="pt-4 border-t space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-base font-bold">Historial de Inyecciones de Capital</Label>
+                        <p className="text-xs text-muted-foreground">Registra las veces que aportes más dinero a la empresa.</p>
+                      </div>
+                      <Button size="sm" variant="outline" disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'} onClick={() => setIsInyeccionModalOpen(true)}>
+                        <Plus className="mr-2 h-4 w-4" /> Inyectar Capital
+                      </Button>
+                      <Dialog open={isInyeccionModalOpen} onOpenChange={setIsInyeccionModalOpen}>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Registrar Inyección de Capital</DialogTitle>
+                            <DialogDescription>Añade nuevos fondos a la caja de la empresa.</DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <Label>Monto a Inyectar</Label>
+                              <Input 
+                                type="number" 
+                                placeholder="0.00" 
+                                value={nuevaInyeccion.monto || ""} 
+                                onChange={e => setNuevaInyeccion({...nuevaInyeccion, monto: parseFloat(e.target.value) || 0})} 
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Origen / Observaciones</Label>
+                              <Input 
+                                placeholder="Ej. Ahorros personales, Préstamo bancario..." 
+                                value={nuevaInyeccion.observaciones} 
+                                onChange={e => setNuevaInyeccion({...nuevaInyeccion, observaciones: e.target.value})} 
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsInyeccionModalOpen(false)}>Cancelar</Button>
+                            <Button onClick={handleInyectarCapital}>Registrar Inyección</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+
+                    {empresaData.inyeccionesCapital && empresaData.inyeccionesCapital.length > 0 ? (
+                      <div className="border rounded-md overflow-hidden">
+                        <Table>
+                          <TableHeader className="bg-muted">
+                            <TableRow>
+                              <TableHead>Fecha</TableHead>
+                              <TableHead>Monto</TableHead>
+                              <TableHead>Origen</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {empresaData.inyeccionesCapital.map((iny) => (
+                              <TableRow key={iny.id}>
+                                <TableCell className="py-2">{new Date(iny.fecha).toLocaleDateString()}</TableCell>
+                                <TableCell className="py-2 font-medium text-green-600">+${iny.monto.toFixed(2)}</TableCell>
+                                <TableCell className="py-2 text-muted-foreground">{iny.observaciones}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic bg-muted/20 p-3 rounded text-center">No hay inyecciones de capital registradas.</p>
+                    )}
+                  </div>
+                )}
                 
                 {userData?.empresaId && (
                   <div className="pt-4 mt-4 border-t space-y-3">

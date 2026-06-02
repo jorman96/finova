@@ -21,7 +21,8 @@ export default function DashboardPage() {
     capitalRecuperado: 0,
     clientesActivos: 0,
     moraVencido: 0,
-    clientesMoraCount: 0
+    clientesMoraCount: 0,
+    inyeccionesCapital: 0
   });
   const [pagosList, setPagosList] = useState<any[]>([]);
 
@@ -34,7 +35,9 @@ export default function DashboardPage() {
       doc(db, "empresas", userData.empresaId),
       (snap) => {
         if (snap.exists()) {
-          setStats(s => ({ ...s, capitalInicial: snap.data().capitalInicial || 0 }));
+          const data = snap.data();
+          const totalInyectado = (data.inyeccionesCapital || []).reduce((sum: number, item: any) => sum + item.monto, 0);
+          setStats(s => ({ ...s, capitalInicial: data.capitalInicial || 0, inyeccionesCapital: totalInyectado }));
         }
       }
     );
@@ -117,10 +120,11 @@ export default function DashboardPage() {
     return <div className="h-[60vh] flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
-  const capitalDisponible = stats.capitalInicial - stats.capitalPrestado + stats.capitalRecuperado;
+  const capitalInvertido = stats.capitalInicial + (stats.inyeccionesCapital || 0);
+  const capitalDisponible = capitalInvertido - stats.capitalPrestado + stats.capitalRecuperado;
 
   const summaryCards = [
-    { title: "Capital Inicial", value: `$${stats.capitalInicial.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: PiggyBank, trend: "Inversión registrada" },
+    { title: "Capital Invertido", value: `$${capitalInvertido.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: PiggyBank, trend: "Inversión total registrada" },
     { title: "Caja Disponible", value: `$${capitalDisponible.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: Wallet, trend: "Liquidez actual" },
     { title: "Capital Prestado", value: `$${stats.capitalPrestado.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: CreditCard, trend: "Dinero en la calle" },
     { title: "Total Recaudado", value: `$${stats.capitalRecuperado.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: DollarSign, trend: `${stats.capitalPrestado > 0 ? ((stats.capitalRecuperado / stats.capitalPrestado)*100).toFixed(1) : 0}% de retorno bruto` },
