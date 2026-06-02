@@ -22,6 +22,7 @@ export interface Empresa {
   moneda: string;
   plan: 'basico' | 'pro' | 'premium';
   estado: 'activa' | 'suspendida';
+  capitalInicial?: number; // Inversión inicial
   createdAt: any;
 }
 

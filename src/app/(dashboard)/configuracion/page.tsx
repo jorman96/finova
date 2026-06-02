@@ -24,7 +24,8 @@ export default function ConfiguracionPage() {
     nombre: "Finova Capital",
     moneda: "USD",
     tasaMoraDefecto: "5",
-    logoUrl: ""
+    logoUrl: "",
+    capitalInicial: 0
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
 
@@ -72,6 +73,7 @@ export default function ConfiguracionPage() {
         nombre: empresaData.nombre,
         moneda: empresaData.moneda,
         tasaMoraDefecto: empresaData.tasaMoraDefecto,
+        capitalInicial: parseFloat(empresaData.capitalInicial.toString()) || 0,
         logoUrl: newLogoUrl,
         estado: 'activa' // Por si acaso se está creando por primera vez
       }, { merge: true });
@@ -165,6 +167,16 @@ export default function ConfiguracionPage() {
                     onChange={e => setEmpresaData({...empresaData, nombre: e.target.value})} 
                     disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Capital Inicial (Inversión)</Label>
+                  <Input 
+                    type="number"
+                    value={empresaData.capitalInicial} 
+                    onChange={e => setEmpresaData({...empresaData, capitalInicial: parseFloat(e.target.value) || 0})} 
+                    disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
+                  />
+                  <p className="text-xs text-muted-foreground">Monto total con el que iniciaste el negocio. Ayudará a calcular tu caja disponible.</p>
                 </div>
                 
                 {userData?.empresaId && (

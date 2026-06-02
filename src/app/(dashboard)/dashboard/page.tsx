@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, CreditCard, DollarSign, AlertCircle, Loader2 } from "lucide-react";
-import { collection, query, where, onSnapshot, orderBy } from "firebase/firestore";
+import { Wallet, PiggyBank, TrendingUp, Users, CreditCard, DollarSign, AlertCircle, Loader2 } from "lucide-react";
+import { collection, query, where, onSnapshot, orderBy, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Prestamo, Cliente } from "@/types";
 
@@ -15,6 +15,8 @@ export default function DashboardPage() {
   const { userData } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
+    capitalInicial: 0,
+    interesProyectado: 0,
     capitalPrestado: 0,
     capitalRecuperado: 0,
     clientesActivos: 0,
@@ -27,6 +29,15 @@ export default function DashboardPage() {
     if (!userData?.empresaId) return;
 
     let clientesMap = new Map();
+
+    const unsubEmpresa = onSnapshot(
+      doc(db, "empresas", userData.empresaId),
+      (snap) => {
+        if (snap.exists()) {
+          setStats(s => ({ ...s, capitalInicial: snap.data().capitalInicial || 0 }));
+        }
+      }
+    );
 
     const unsubClientes = onSnapshot(
       query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId)), 
@@ -50,8 +61,12 @@ export default function DashboardPage() {
       query(collection(db, "prestamos"), where("empresaId", "==", userData.empresaId)), 
       (snap) => {
         let cp = 0;
-        snap.forEach(d => cp += d.data().monto);
-        setStats(s => ({ ...s, capitalPrestado: cp }));
+        let interesProj = 0;
+        snap.forEach(d => {
+          cp += d.data().monto;
+          interesProj += (d.data().totalInteres || 0);
+        });
+        setStats(s => ({ ...s, capitalPrestado: cp, interesProyectado: interesProj }));
       }
     );
 
@@ -90,6 +105,7 @@ export default function DashboardPage() {
     );
 
     return () => {
+      unsubEmpresa();
       unsubPrestamos();
       unsubPagos();
       unsubClientes();
@@ -101,11 +117,15 @@ export default function DashboardPage() {
     return <div className="h-[60vh] flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
+  const capitalDisponible = stats.capitalInicial - stats.capitalPrestado + stats.capitalRecuperado;
+
   const summaryCards = [
-    { title: "Capital Prestado", value: `$${stats.capitalPrestado.toFixed(2)}`, icon: CreditCard, trend: "Acumulado histórico" },
-    { title: "Capital Recuperado", value: `$${stats.capitalRecuperado.toFixed(2)}`, icon: DollarSign, trend: `${stats.capitalPrestado > 0 ? ((stats.capitalRecuperado / stats.capitalPrestado)*100).toFixed(1) : 0}% del capital` },
-    { title: "Clientes Activos", value: stats.clientesActivos.toString(), icon: Users, trend: "Actualmente" },
-    { title: "Mora (Vencido)", value: `$${stats.moraVencido.toFixed(2)}`, icon: AlertCircle, trend: `${stats.clientesMoraCount} clientes en rojo`, alert: stats.clientesMoraCount > 0 },
+    { title: "Capital Inicial", value: `$${stats.capitalInicial.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: PiggyBank, trend: "Inversión registrada" },
+    { title: "Caja Disponible", value: `$${capitalDisponible.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: Wallet, trend: "Liquidez actual" },
+    { title: "Capital Prestado", value: `$${stats.capitalPrestado.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: CreditCard, trend: "Dinero en la calle" },
+    { title: "Total Recaudado", value: `$${stats.capitalRecuperado.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: DollarSign, trend: `${stats.capitalPrestado > 0 ? ((stats.capitalRecuperado / stats.capitalPrestado)*100).toFixed(1) : 0}% de retorno bruto` },
+    { title: "Interés Proyectado", value: `$${stats.interesProyectado.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: TrendingUp, trend: "Ganancia bruta esperada" },
+    { title: "Mora (Riesgo)", value: `$${stats.moraVencido.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, icon: AlertCircle, trend: `${stats.clientesMoraCount} clientes atrasados`, alert: stats.clientesMoraCount > 0 },
   ];
 
   return (
@@ -115,7 +135,7 @@ export default function DashboardPage() {
         <p className="text-muted-foreground">Resumen general de tu cartera de préstamos.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {summaryCards.map((card, index) => (
           <Card key={index} className={card.alert ? "border-destructive/50 bg-destructive/5" : ""}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
