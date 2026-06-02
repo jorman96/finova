@@ -116,9 +116,16 @@ export default function PagosPage() {
                     +${pago.monto.toFixed(2)}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="capitalize">
-                      {pago.metodo}
-                    </Badge>
+                    <div className="flex flex-col gap-1 items-start">
+                      <Badge variant="outline" className="capitalize">
+                        {pago.metodo}
+                      </Badge>
+                      {pago.cuentaDestino && (
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[150px]" title={pago.cuentaDestino}>
+                          Bco: {pago.cuentaDestino.split(' - ')[0]}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate text-sm">
                     {pago.observaciones || 'Sin detalles'}

@@ -10,6 +10,13 @@ export interface Usuario {
   createdAt: any;
 }
 
+export interface CuentaBancaria {
+  id: string;
+  banco: string;
+  numero: string;
+  tipo: string;
+}
+
 export interface Empresa {
   id: string;
   nombre: string; // Nombre Comercial
@@ -23,6 +30,7 @@ export interface Empresa {
   plan: 'basico' | 'pro' | 'premium';
   estado: 'activa' | 'suspendida';
   capitalInicial?: number; // Inversión inicial
+  cuentasBancarias?: CuentaBancaria[];
   createdAt: any;
 }
 
@@ -107,6 +115,7 @@ export interface Pago {
   clienteNombre?: string;
   monto: number;
   metodo: string;
+  cuentaDestino?: string;
   observaciones: string;
   comprobanteUrl?: string | null;
   fecha: any;

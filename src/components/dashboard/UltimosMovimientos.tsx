@@ -39,7 +39,9 @@ export function UltimosMovimientos({ data }: UltimosMovimientosProps) {
               </Avatar>
               <div className="flex flex-col">
                 <span className="text-sm font-semibold truncate max-w-[150px] sm:max-w-[180px]">{nombre}</span>
-                <span className="text-xs text-muted-foreground">{dateStr} • {pago.metodo}</span>
+                <span className="text-xs text-muted-foreground">
+                  {dateStr} • {pago.metodo} {pago.cuentaDestino ? `(${pago.cuentaDestino.split(' - ')[0]})` : ''}
+                </span>
               </div>
             </div>
             <div className="flex flex-col items-end">

@@ -150,6 +150,7 @@ export default function ReportesPage() {
           "Cliente": p.clienteNombre || "N/A",
           "Monto": p.monto,
           "Método": p.metodo,
+          "Cuenta Destino": p.cuentaDestino || "N/A",
           "Registrado Por": p.usuarioNombre || "Sistema"
         }));
         const wsCobros = XLSX.utils.json_to_sheet(cobrosData);
@@ -228,13 +229,13 @@ export default function ReportesPage() {
         const tableBody = data.pagos.map((p: any) => [
           p.fechaStr,
           p.clienteNombre || 'N/A',
-          p.metodo,
+          `${p.metodo} ${p.cuentaDestino ? `(${p.cuentaDestino.split(' - ')[0]})` : ''}`,
           formatMoney(p.monto)
         ]);
 
         autoTable(doc, {
           startY: currentY,
-          head: [['Fecha', 'Cliente', 'Método', 'Monto']],
+          head: [['Fecha', 'Cliente', 'Método/Cuenta', 'Monto']],
           body: tableBody,
           theme: 'striped',
           headStyles: { fillColor: [46, 204, 113] }

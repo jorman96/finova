@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger 
 } from "@/components/ui/dialog";
@@ -24,6 +24,23 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   
+  const [cuentasBancarias, setCuentasBancarias] = useState<{ id: string, banco: string, numero: string, tipo: string }[]>([]);
+  const [cuentaDestino, setCuentaDestino] = useState("");
+
+  useEffect(() => {
+    if (open && userData?.empresaId) {
+      import("firebase/firestore").then(({ doc, getDoc }) => {
+        getDoc(doc(db, "empresas", userData.empresaId)).then((snap) => {
+          if (snap.exists()) {
+            setCuentasBancarias(snap.data().cuentasBancarias || []);
+          }
+        });
+      });
+    } else {
+      setCuentaDestino("");
+    }
+  }, [open, userData?.empresaId]);
+  
   // Find next pending cuota
   const proximaCuota = cuotas.find(c => c.estado === 'pendiente' || c.estado === 'vencida' || c.estado === 'parcial');
   
@@ -42,6 +59,11 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
     const montoPago = Number(monto);
     if (montoPago <= 0) {
       toast.error("El monto debe ser mayor a 0.");
+      return;
+    }
+
+    if ((metodoPago === 'transferencia' || metodoPago === 'deposito') && !cuentaDestino) {
+      toast.error("Debes seleccionar a qué cuenta llegó el dinero.");
       return;
     }
 
@@ -118,6 +140,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
         clienteNombre: prestamo.clienteNombre,
         monto: montoPago,
         metodo: metodoPago,
+        cuentaDestino: (metodoPago === 'transferencia' || metodoPago === 'deposito') ? cuentaDestino : null,
         observaciones,
         comprobanteUrl,
         fecha: serverTimestamp(),
@@ -195,6 +218,29 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
                 </SelectContent>
               </Select>
             </div>
+
+            {(metodoPago === 'transferencia' || metodoPago === 'deposito') && (
+              <div className="space-y-2">
+                <Label>Cuenta Destino (Banco)</Label>
+                <Select value={cuentaDestino} onValueChange={setCuentaDestino}>
+                  <SelectTrigger><SelectValue placeholder="Seleccione una cuenta..." /></SelectTrigger>
+                  <SelectContent>
+                    {cuentasBancarias.length === 0 ? (
+                      <SelectItem value="ninguna" disabled>No hay cuentas configuradas</SelectItem>
+                    ) : (
+                      cuentasBancarias.map(c => (
+                        <SelectItem key={c.id} value={`${c.banco} - ${c.numero}`}>
+                          {c.banco} ({c.tipo}) - {c.numero}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {cuentasBancarias.length === 0 && (
+                  <p className="text-xs text-destructive">Debe configurar cuentas bancarias en Configuración para usar este método.</p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Comprobante (Opcional)</Label>

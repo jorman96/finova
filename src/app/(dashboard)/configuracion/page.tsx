@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
-import { LogOut, Save, Loader2, Moon, Sun, Monitor } from "lucide-react";
+import { LogOut, Save, Loader2, Moon, Sun, Monitor, Plus, Trash2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "next-themes";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -25,9 +26,25 @@ export default function ConfiguracionPage() {
     moneda: "USD",
     tasaMoraDefecto: "5",
     logoUrl: "",
-    capitalInicial: 0
+    capitalInicial: 0,
+    cuentasBancarias: [] as { id: string, banco: string, numero: string, tipo: string }[]
   });
   const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [nuevoBanco, setNuevoBanco] = useState({ banco: "", numero: "", tipo: "ahorros" });
+
+  const handleAddBanco = () => {
+    if (!nuevoBanco.banco || !nuevoBanco.numero) return;
+    const newBanco = {
+      id: Date.now().toString(),
+      ...nuevoBanco
+    };
+    setEmpresaData(prev => ({ ...prev, cuentasBancarias: [...(prev.cuentasBancarias || []), newBanco] }));
+    setNuevoBanco({ banco: "", numero: "", tipo: "ahorros" });
+  };
+
+  const handleRemoveBanco = (id: string) => {
+    setEmpresaData(prev => ({ ...prev, cuentasBancarias: (prev.cuentasBancarias || []).filter(c => c.id !== id) }));
+  };
 
   // Cargar datos reales de la empresa si existen
   useEffect(() => {
@@ -74,6 +91,7 @@ export default function ConfiguracionPage() {
         moneda: empresaData.moneda,
         tasaMoraDefecto: empresaData.tasaMoraDefecto,
         capitalInicial: parseFloat(empresaData.capitalInicial.toString()) || 0,
+        cuentasBancarias: empresaData.cuentasBancarias || [],
         logoUrl: newLogoUrl,
         estado: 'activa' // Por si acaso se está creando por primera vez
       }, { merge: true });
@@ -97,9 +115,10 @@ export default function ConfiguracionPage() {
       </div>
 
       <Tabs defaultValue="perfil" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 max-w-[500px]">
+        <TabsList className="grid w-full grid-cols-5 max-w-[600px]">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="empresa">Empresa</TabsTrigger>
+          <TabsTrigger value="bancos">Cajas y Bancos</TabsTrigger>
           <TabsTrigger value="equipo">Equipo</TabsTrigger>
           <TabsTrigger value="sistema">Sistema</TabsTrigger>
         </TabsList>
@@ -219,6 +238,71 @@ export default function ConfiguracionPage() {
                 </Button>
               </CardFooter>
             </form>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bancos" className="space-y-4 pt-4">
+          <Card className="max-w-2xl">
+            <CardHeader>
+              <CardTitle>Cajas y Cuentas Bancarias</CardTitle>
+              <CardDescription>Registra las cuentas donde recibes el dinero de los clientes.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
+                <h4 className="font-medium text-sm">Agregar Nueva Cuenta</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Banco / Entidad</Label>
+                    <Input placeholder="Ej. Banco Pichincha" value={nuevoBanco.banco} onChange={e => setNuevoBanco({...nuevoBanco, banco: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Tipo de Cuenta</Label>
+                    <Select value={nuevoBanco.tipo} onValueChange={v => setNuevoBanco({...nuevoBanco, tipo: v})}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ahorros">Ahorros</SelectItem>
+                        <SelectItem value="corriente">Corriente</SelectItem>
+                        <SelectItem value="caja_chica">Caja Chica (Efectivo)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Número / Identificador</Label>
+                    <Input placeholder="Ej. 22001234" value={nuevoBanco.numero} onChange={e => setNuevoBanco({...nuevoBanco, numero: e.target.value})} />
+                  </div>
+                  <div className="flex items-end">
+                    <Button type="button" onClick={handleAddBanco} className="w-full"><Plus className="mr-2 h-4 w-4" /> Agregar</Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4 mt-6">
+                <h4 className="font-medium text-sm border-b pb-2">Cuentas Registradas</h4>
+                {(!empresaData.cuentasBancarias || empresaData.cuentasBancarias.length === 0) ? (
+                  <p className="text-sm text-muted-foreground italic">No hay cuentas bancarias registradas.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {empresaData.cuentasBancarias.map((cuenta) => (
+                      <div key={cuenta.id} className="flex items-center justify-between p-3 border rounded bg-background">
+                        <div>
+                          <p className="font-medium">{cuenta.banco} <span className="text-muted-foreground text-xs uppercase ml-2">({cuenta.tipo})</span></p>
+                          <p className="text-sm font-mono text-muted-foreground">{cuenta.numero}</p>
+                        </div>
+                        <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => handleRemoveBanco(cuenta.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+            <CardFooter className="border-t p-6">
+              <Button type="button" onClick={handleSaveEmpresa} disabled={loading || (userData?.rol !== 'dueño' && userData?.rol !== 'superadmin')}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Save className="mr-2 h-4 w-4" /> Guardar Cambios
+              </Button>
+            </CardFooter>
           </Card>
         </TabsContent>
 
