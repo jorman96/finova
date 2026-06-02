@@ -222,7 +222,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
             {(metodoPago === 'transferencia' || metodoPago === 'deposito') && (
               <div className="space-y-2">
                 <Label>Cuenta Destino (Banco)</Label>
-                <Select value={cuentaDestino} onValueChange={setCuentaDestino}>
+                <Select value={cuentaDestino} onValueChange={(v) => setCuentaDestino(v || "")}>
                   <SelectTrigger><SelectValue placeholder="Seleccione una cuenta..." /></SelectTrigger>
                   <SelectContent>
                     {cuentasBancarias.length === 0 ? (

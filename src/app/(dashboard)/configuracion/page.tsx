@@ -257,7 +257,7 @@ export default function ConfiguracionPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Tipo de Cuenta</Label>
-                    <Select value={nuevoBanco.tipo} onValueChange={v => setNuevoBanco({...nuevoBanco, tipo: v})}>
+                    <Select value={nuevoBanco.tipo} onValueChange={v => setNuevoBanco({...nuevoBanco, tipo: v || "ahorros"})}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="ahorros">Ahorros</SelectItem>
@@ -359,7 +359,6 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { UserPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
