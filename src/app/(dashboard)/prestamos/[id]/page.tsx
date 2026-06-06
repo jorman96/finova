@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Prestamo, Cuota } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -27,31 +27,44 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
   const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
 
-  const fetchData = async () => {
-    try {
-      const docRef = doc(db, "prestamos", id);
-      const docSnap = await getDoc(docRef);
+  useEffect(() => {
+    if (!id) return;
+
+    const unsubPrestamo = onSnapshot(doc(db, "prestamos", id), (docSnap) => {
       if (docSnap.exists()) {
         setPrestamo({ id: docSnap.id, ...docSnap.data() } as Prestamo);
       } else {
         router.push("/prestamos");
-        return;
       }
+    });
 
-      // Obtener Cuotas
-      const qCuotas = query(collection(db, "cuotas"), where("prestamoId", "==", id), orderBy("numeroCuota", "asc"));
-      const cuotasSnap = await getDocs(qCuotas);
-      setCuotas(cuotasSnap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)));
+    const unsubCuotas = onSnapshot(query(collection(db, "cuotas"), where("prestamoId", "==", id), orderBy("numeroCuota", "asc")), (snap) => {
+      setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)));
+    });
 
-      // Obtener Pagos
-      const qPagos = query(collection(db, "pagos"), where("prestamoId", "==", id), orderBy("fecha", "desc"));
-      const pagosSnap = await getDocs(qPagos);
-      setPagos(pagosSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (error) {
-      console.error(error);
-    } finally {
+    const unsubPagos = onSnapshot(query(collection(db, "pagos"), where("prestamoId", "==", id)), (snap) => {
+      const pagosData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      pagosData.sort((a: any, b: any) => {
+        const dateA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha || 0);
+        const dateB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha || 0);
+        return dateB.getTime() - dateA.getTime();
+      });
+      setPagos(pagosData);
       setLoading(false);
-    }
+    }, (error) => {
+      console.error("Error al obtener pagos:", error);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubPrestamo();
+      unsubCuotas();
+      unsubPagos();
+    };
+  }, [id, router]);
+
+  const fetchData = () => {
+    // Ya no es necesario, pero mantenemos la función para no romper props
   };
 
   const handleDeletePrestamo = async () => {
@@ -145,9 +158,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [id, router]);
+
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando detalles del préstamo...</div>;
   if (!prestamo) return null;
