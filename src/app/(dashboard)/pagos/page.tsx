@@ -12,6 +12,7 @@ import { collection, query, orderBy, onSnapshot, getDocs, where } from "firebase
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import Link from "next/link";
 
 export default function PagosPage() {
   const { userData } = useAuth();
@@ -138,6 +139,13 @@ export default function PagosPage() {
                             <FileText className="h-4 w-4 text-blue-500" />
                           </Button>
                         </a>
+                      )}
+                      {pago.prestamoId && (
+                        <Link href={`/prestamos/${pago.prestamoId}`}>
+                          <Button variant="outline" size="sm" title="Ver Detalle de Préstamo para Eliminar Pago">
+                            Ver Préstamo
+                          </Button>
+                        </Link>
                       )}
                       <Button 
                         variant="outline" 

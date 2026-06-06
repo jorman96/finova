@@ -21,6 +21,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
   const { userData } = useAuth();
   const [prestamo, setPrestamo] = useState<Prestamo | null>(null);
   const [cuotas, setCuotas] = useState<Cuota[]>([]);
+  const [pagos, setPagos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -41,6 +42,11 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
       const qCuotas = query(collection(db, "cuotas"), where("prestamoId", "==", id), orderBy("numeroCuota", "asc"));
       const cuotasSnap = await getDocs(qCuotas);
       setCuotas(cuotasSnap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)));
+
+      // Obtener Pagos
+      const qPagos = query(collection(db, "pagos"), where("prestamoId", "==", id), orderBy("fecha", "desc"));
+      const pagosSnap = await getDocs(qPagos);
+      setPagos(pagosSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (error) {
       console.error(error);
     } finally {
@@ -72,7 +78,70 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
     } catch (error) {
       console.error("Error eliminando préstamo:", error);
       toast.error("Error al eliminar el crédito.");
+    } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleDeletePago = async (pago: any) => {
+    if(!confirm("¿Estás seguro de que deseas eliminar este pago y revertir el saldo? Esta acción no se puede deshacer.")) return;
+    try {
+      const batch = writeBatch(db);
+      
+      // 1. Revertir Cuotas
+      if (pago.cuotasAplicadas && pago.cuotasAplicadas.length > 0) {
+         for (const ca of pago.cuotasAplicadas) {
+            const currentCuota = cuotas.find(c => c.id === ca.cuotaId);
+            if(currentCuota) {
+               const nuevoPagado = Math.max(0, currentCuota.montoPagado - ca.montoAbonado);
+               const nuevoEstado = nuevoPagado >= currentCuota.totalCuota ? 'pagada' : 
+                                  (nuevoPagado > 0 ? 'parcial' : (new Date(currentCuota.fechaVencimiento) < new Date() ? 'vencida' : 'pendiente'));
+               batch.update(doc(db, "cuotas", ca.cuotaId), {
+                  montoPagado: nuevoPagado,
+                  estado: nuevoEstado
+               });
+            }
+         }
+      } else {
+         let montoARevertir = pago.monto;
+         const cuotasReversa = [...cuotas].sort((a,b) => b.numeroCuota - a.numeroCuota);
+         for (const c of cuotasReversa) {
+            if (montoARevertir <= 0) break;
+            if (c.montoPagado > 0) {
+               const aRevertir = Math.min(c.montoPagado, montoARevertir);
+               const nuevoPagado = c.montoPagado - aRevertir;
+               const nuevoEstado = nuevoPagado >= c.totalCuota ? 'pagada' : 
+                                  (nuevoPagado > 0 ? 'parcial' : (new Date(c.fechaVencimiento) < new Date() ? 'vencida' : 'pendiente'));
+               batch.update(doc(db, "cuotas", c.id), {
+                 montoPagado: nuevoPagado,
+                 estado: nuevoEstado
+               });
+               montoARevertir -= aRevertir;
+            }
+         }
+      }
+
+      // 2. Revertir Préstamo
+      const nuevoSaldoRestante = prestamo!.saldoRestante + pago.monto;
+      let nuevoEstadoPrestamo = prestamo!.estado;
+      if(prestamo!.estado === 'completado') {
+         const tieneVencidas = cuotas.some(c => new Date(c.fechaVencimiento) < new Date() && c.montoPagado < c.totalCuota);
+         nuevoEstadoPrestamo = tieneVencidas ? 'moroso' : 'activo';
+      }
+      batch.update(doc(db, "prestamos", prestamo!.id), {
+         saldoRestante: nuevoSaldoRestante,
+         estado: nuevoEstadoPrestamo
+      });
+
+      // 3. Eliminar Pago
+      batch.delete(doc(db, "pagos", pago.id));
+
+      await batch.commit();
+      toast.success("Pago eliminado y saldos revertidos correctamente.");
+      fetchData();
+    } catch(e) {
+      console.error(e);
+      toast.error("Error al revertir el pago.");
     }
   };
 
@@ -174,6 +243,10 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
               <span className="font-medium">${prestamo.totalPagar.toFixed(2)}</span>
             </div>
             <div className="flex justify-between border-b pb-2">
+              <span className="text-muted-foreground text-sm">Total Pagado</span>
+              <span className="font-medium text-green-600">${(prestamo.totalPagar - prestamo.saldoRestante).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between border-b pb-2">
               <span className="text-muted-foreground text-sm">Saldo Restante</span>
               <span className="font-bold text-primary">${prestamo.saldoRestante.toFixed(2)}</span>
             </div>
@@ -218,19 +291,73 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
                           I: ${cuota.interes.toFixed(2)}
                         </td>
                         <td className="p-3">
-                          <Badge variant={cuota.estado === 'pagada' ? 'secondary' : cuota.estado === 'vencida' ? 'destructive' : 'outline'}>
+                          <Badge variant={cuota.estado === 'pagada' ? 'secondary' : cuota.estado === 'vencida' ? 'destructive' : 'outline'} className="mb-1">
                             {cuota.estado === 'pagada' ? <CheckCircle className="mr-1 h-3 w-3" /> : cuota.estado === 'vencida' ? <AlertCircle className="mr-1 h-3 w-3" /> : <Clock className="mr-1 h-3 w-3" />}
                             {cuota.estado}
                           </Badge>
-                          {cuota.montoPagado > 0 && cuota.montoPagado < cuota.totalCuota && (
-                            <div className="text-[10px] mt-1 text-muted-foreground">Pagado: ${cuota.montoPagado}</div>
-                          )}
+                          <div className="text-[11px] text-muted-foreground mt-1">
+                            Pagado: <span className={cuota.montoPagado > 0 ? "text-green-600 font-medium" : ""}>${cuota.montoPagado.toFixed(2)}</span> <br />
+                            Resta: ${(cuota.totalCuota - cuota.montoPagado).toFixed(2)}
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-3 mt-4">
+          <CardHeader>
+            <CardTitle>Historial de Pagos</CardTitle>
+            <CardDescription>Registro de abonos y comprobantes.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-md overflow-hidden bg-card/50">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="p-3 font-medium">Fecha</th>
+                    <th className="p-3 font-medium">Monto</th>
+                    <th className="p-3 font-medium">Método</th>
+                    <th className="p-3 font-medium">Registrado por</th>
+                    <th className="p-3 font-medium">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagos.length === 0 ? (
+                    <tr><td colSpan={5} className="p-4 text-center text-muted-foreground">No hay pagos registrados.</td></tr>
+                  ) : pagos.map(p => (
+                    <tr key={p.id} className="border-t hover:bg-muted/50">
+                      <td className="p-3">{p.fecha?.toDate ? new Date(p.fecha.toDate()).toLocaleString() : 'N/A'}</td>
+                      <td className="p-3 font-bold text-green-600">${p.monto.toFixed(2)}</td>
+                      <td className="p-3 capitalize">{p.metodo || p.metodoPago || 'Efectivo'}</td>
+                      <td className="p-3 text-muted-foreground">{p.registradoPor || 'Sistema'}</td>
+                      <td className="p-3 flex gap-2">
+                        <Button size="sm" variant="outline" onClick={async () => {
+                          try {
+                            const { generarReciboPago } = await import("@/lib/pdfGenerator");
+                            const empresaSnap = await getDoc(doc(db, "empresas", prestamo.empresaId));
+                            const clienteSnap = await getDoc(doc(db, "clientes", prestamo.clienteId));
+                            await generarReciboPago({ ...p, fecha: p.fecha?.toDate ? p.fecha.toDate().toISOString() : new Date().toISOString() }, prestamo, clienteSnap.data(), empresaSnap.data());
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}>
+                          <FileText className="h-4 w-4 mr-2" /> Recibo
+                        </Button>
+                        {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
+                          <Button size="sm" variant="destructive" onClick={() => handleDeletePago(p)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       </div>

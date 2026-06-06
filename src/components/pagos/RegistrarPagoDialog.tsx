@@ -79,6 +79,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
 
       // Iterar sobre cuotas pendientes/vencidas para saldarlas en orden
       const cuotasPendientes = cuotas.filter(c => c.estado !== 'pagada');
+      const cuotasAplicadas = [];
       
       for (const cuota of cuotasPendientes) {
         if (montoRestante <= 0) break;
@@ -93,6 +94,17 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
           montoPagado: nuevoMontoPagado,
           estado: nuevoEstado,
           fechaPago: new Date().toISOString()
+        });
+
+        cuotasAplicadas.push({
+          cuotaId: cuota.id,
+          numeroCuota: cuota.numeroCuota,
+          montoAbonado: montoAAplicar,
+          valorCuota: cuota.totalCuota,
+          saldoAnterior: saldoCuota,
+          saldoRestante: saldoCuota - montoAAplicar,
+          interes: cuota.interes,
+          capital: cuota.capital
         });
 
         montoRestante -= montoAAplicar;
@@ -143,6 +155,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
         cuentaDestino: (metodoPago === 'transferencia' || metodoPago === 'deposito') ? cuentaDestino : null,
         observaciones,
         comprobanteUrl,
+        cuotasAplicadas,
         fecha: serverTimestamp(),
         registradoPor: userData.nombre || "Sistema"
       });

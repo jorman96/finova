@@ -68,17 +68,35 @@ export const generarReciboPago = async (
   doc.setTextColor(40, 40, 40);
   doc.text("Detalles de la Transacción:", 14, 90);
 
-  // Tabla
+  let startY = 95;
+  if (pago.cuotasAplicadas && pago.cuotasAplicadas.length > 0) {
+    autoTable(doc, {
+      startY: startY,
+      head: [["Cuota N°", "Valor Inicial", "Intereses", "Abono", "Saldo Restante"]],
+      body: pago.cuotasAplicadas.map((c: any) => [
+        `${c.numeroCuota}`,
+        formatMoney(c.valorCuota, empresa?.moneda),
+        formatMoney(c.interes, empresa?.moneda),
+        formatMoney(c.montoAbonado, empresa?.moneda),
+        formatMoney(c.saldoRestante, empresa?.moneda)
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [66, 66, 66] },
+      styles: { fontSize: 9, cellPadding: 4 },
+    });
+    startY = (doc as any).lastAutoTable.finalY + 10;
+  }
+
   autoTable(doc, {
-    startY: 95,
-    head: [["Descripción", "Monto"]],
+    startY: startY,
+    head: [["Descripción General", "Detalle"]],
     body: [
-      [`Pago de Cuota N° ${pago.numeroCuota || '-'} del Préstamo`, formatMoney(pago.monto, empresa?.moneda)],
-      ["Método de Pago", pago.metodoPago?.toUpperCase() || "EFECTIVO"],
-      ["Registrado por", pago.registradoPorNombre || "Administración"]
+      ...(!pago.cuotasAplicadas ? [[`Pago de Cuota N° ${pago.numeroCuota || '-'} del Préstamo`, formatMoney(pago.monto, empresa?.moneda)]] : []),
+      ["Método de Pago", pago.metodo?.toUpperCase() || pago.metodoPago?.toUpperCase() || "EFECTIVO"],
+      ["Registrado por", pago.registradoPor || pago.registradoPorNombre || "Administración"]
     ],
-    theme: 'grid',
-    headStyles: { fillColor: [66, 66, 66] },
+    theme: pago.cuotasAplicadas ? 'plain' : 'grid',
+    headStyles: { fillColor: pago.cuotasAplicadas ? [240, 240, 240] : [66, 66, 66], textColor: pago.cuotasAplicadas ? [40, 40, 40] : [255, 255, 255] },
     styles: { fontSize: 10, cellPadding: 5 },
   });
 
