@@ -280,9 +280,9 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             <CardDescription>Detalle de cuotas y estado de pagos.</CardDescription>
           </CardHeader>
           <CardContent>
-             <div className="border rounded-md overflow-hidden bg-card/50">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-muted">
+             <div className="border rounded-md overflow-y-auto max-h-[500px] bg-card/50">
+                <table className="w-full text-sm text-left relative">
+                  <thead className="bg-muted sticky top-0 z-10 shadow-sm">
                     <tr>
                       <th className="p-3 font-medium">#</th>
                       <th className="p-3 font-medium">Vencimiento</th>
@@ -325,9 +325,9 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             <CardDescription>Registro de abonos y comprobantes.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="border rounded-md overflow-hidden bg-card/50">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-muted">
+            <div className="border rounded-md overflow-y-auto max-h-[400px] bg-card/50">
+              <table className="w-full text-sm text-left relative">
+                <thead className="bg-muted sticky top-0 z-10 shadow-sm">
                   <tr>
                     <th className="p-3 font-medium">Fecha</th>
                     <th className="p-3 font-medium">Monto</th>
