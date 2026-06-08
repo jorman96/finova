@@ -93,7 +93,7 @@ export const generarReciboPago = async (
     body: [
       ...(!pago.cuotasAplicadas ? [[`Pago de Cuota N° ${pago.numeroCuota || '-'} del Préstamo`, formatMoney(pago.monto, empresa?.moneda)]] : []),
       ["Método de Pago", pago.metodo?.toUpperCase() || pago.metodoPago?.toUpperCase() || "EFECTIVO"],
-      ["Registrado por", pago.registradoPor || pago.registradoPorNombre || "Administración"]
+      ["Procesado por", empresa?.nombre || "Plataforma Finova"]
     ],
     theme: pago.cuotasAplicadas ? 'plain' : 'grid',
     headStyles: { fillColor: pago.cuotasAplicadas ? [240, 240, 240] : [66, 66, 66], textColor: pago.cuotasAplicadas ? [40, 40, 40] : [255, 255, 255] },
