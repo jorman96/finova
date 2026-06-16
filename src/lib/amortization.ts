@@ -27,14 +27,14 @@ function calcularTasaPorCuota(tasaInput: number, periodoTasa: string, frecuencia
     tasaMensual = tasaInput / 12;
   }
 
-  // Fraccionar la tasa mensual según la frecuencia de pago usando año comercial (360 días)
+  // Fraccionar la tasa mensual según la frecuencia de pago usando estándar comercial simple
   switch (frecuenciaPago) {
     case 'diario':
-      return tasaMensual / 30;
+      return tasaMensual / 30; // 30 días = 1 mes
     case 'semanal':
-      return tasaMensual / 4.333333; // 52 semanas / 12 meses
+      return tasaMensual / 4; // 4 semanas = 1 mes
     case 'quincenal':
-      return tasaMensual / 2;
+      return tasaMensual / 2; // 2 quincenas = 1 mes
     case 'mensual':
       return tasaMensual;
     default:
