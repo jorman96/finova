@@ -87,7 +87,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
         const saldoCuota = cuota.totalCuota - cuota.montoPagado;
         const montoAAplicar = Math.min(saldoCuota, montoRestante);
         const nuevoMontoPagado = cuota.montoPagado + montoAAplicar;
-        const nuevoEstado = nuevoMontoPagado >= cuota.totalCuota ? 'pagada' : 'parcial';
+        const nuevoEstado = (nuevoMontoPagado + 0.01) >= cuota.totalCuota ? 'pagada' : 'parcial';
 
         const cuotaRef = doc(db, "cuotas", cuota.id);
         batch.update(cuotaRef, {
@@ -112,7 +112,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
 
       // Actualizar Préstamo
       const nuevoSaldoRestante = Math.max(0, prestamo.saldoRestante - montoPago);
-      const prestamoEstado = nuevoSaldoRestante <= 0 ? 'completado' : prestamo.estado;
+      const prestamoEstado = nuevoSaldoRestante <= 0.01 ? 'completado' : prestamo.estado;
       
       const prestamoRef = doc(db, "prestamos", prestamo.id);
       batch.update(prestamoRef, {
