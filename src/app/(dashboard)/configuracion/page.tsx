@@ -7,13 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
-import { LogOut, Save, Loader2, Moon, Sun, Monitor, Plus, Trash2 } from "lucide-react";
+import { LogOut, Save, Loader2, Moon, Sun, Monitor, Plus, Trash2, RotateCcw, AlertTriangle, ShieldCheck, UserPlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { useTheme } from "next-themes";
 import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { InyeccionCapital, MovimientoBitacoraCapital } from "@/types";
 
 export default function ConfiguracionPage() {
   const { user, userData } = useAuth();
@@ -28,10 +33,16 @@ export default function ConfiguracionPage() {
     logoUrl: "",
     capitalInicial: 0,
     cuentasBancarias: [] as { id: string, banco: string, numero: string, tipo: string, titular: string }[],
-    inyeccionesCapital: [] as { id: string, monto: number, fecha: string, observaciones: string, registradoPor: string }[]
+    inyeccionesCapital: [] as InyeccionCapital[],
+    bitacoraCapital: [] as MovimientoBitacoraCapital[]
   });
   const [nuevaInyeccion, setNuevaInyeccion] = useState({ monto: 0, observaciones: "" });
   const [isInyeccionModalOpen, setIsInyeccionModalOpen] = useState(false);
+  const [vistaCapitalTab, setVistaCapitalTab] = useState<'inyecciones' | 'bitacora'>('inyecciones');
+  const [inyeccionARevertir, setInyeccionARevertir] = useState<InyeccionCapital | null>(null);
+  const [isRevertModalOpen, setIsRevertModalOpen] = useState(false);
+  const [motivoReversion, setMotivoReversion] = useState("");
+  const [isReverting, setIsReverting] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [nuevoBanco, setNuevoBanco] = useState({ banco: "", numero: "", tipo: "ahorros", titular: "" });
 
@@ -50,24 +61,46 @@ export default function ConfiguracionPage() {
       toast.error("Ingrese un monto válido");
       return;
     }
-    const inyeccion = {
-      id: Date.now().toString(),
+    const inyeccionId = Date.now().toString();
+    const inyeccion: InyeccionCapital = {
+      id: inyeccionId,
       monto: nuevaInyeccion.monto,
       fecha: new Date().toISOString(),
-      observaciones: nuevaInyeccion.observaciones || "Aporte de capital",
+      observaciones: nuevaInyeccion.observaciones.trim() || "Aporte de capital",
       registradoPor: userData?.nombre || "Dueño"
+    };
+
+    const movimientoBitacora: MovimientoBitacoraCapital = {
+      id: inyeccionId,
+      tipo: 'inyeccion',
+      monto: nuevaInyeccion.monto,
+      fecha: inyeccion.fecha,
+      motivo: inyeccion.observaciones,
+      registradoPor: userData?.nombre || "Dueño",
+      usuarioEmail: user?.email || "",
+      usuarioRol: userData?.rol || "dueño",
+      inyeccionIdRef: inyeccionId
     };
     
     // Save locally first to show in UI
     const updatedInyecciones = [...(empresaData.inyeccionesCapital || []), inyeccion];
-    setEmpresaData(prev => ({ ...prev, inyeccionesCapital: updatedInyecciones }));
+    const updatedBitacora = [movimientoBitacora, ...(empresaData.bitacoraCapital || [])];
+
+    setEmpresaData(prev => ({ 
+      ...prev, 
+      inyeccionesCapital: updatedInyecciones,
+      bitacoraCapital: updatedBitacora 
+    }));
     
     // Save to Firestore immediately
     try {
       if (userData?.empresaId) {
         const { doc, setDoc } = await import("firebase/firestore");
-        await setDoc(doc(db, "empresas", userData.empresaId), { inyeccionesCapital: updatedInyecciones }, { merge: true });
-        toast.success("Capital inyectado y guardado correctamente");
+        await setDoc(doc(db, "empresas", userData.empresaId), { 
+          inyeccionesCapital: updatedInyecciones,
+          bitacoraCapital: updatedBitacora
+        }, { merge: true });
+        toast.success("Capital inyectado y registrado en la bitácora");
       }
     } catch (e: any) {
       toast.error("Error al guardar inyección: " + e.message);
@@ -75,6 +108,53 @@ export default function ConfiguracionPage() {
     
     setNuevaInyeccion({ monto: 0, observaciones: "" });
     setIsInyeccionModalOpen(false);
+  };
+
+  const handleConfirmarReversion = async () => {
+    if (!inyeccionARevertir || !userData?.empresaId) return;
+    setIsReverting(true);
+
+    try {
+      const updatedInyecciones = (empresaData.inyeccionesCapital || []).filter(iny => iny.id !== inyeccionARevertir.id);
+      
+      const motivoFinal = motivoReversion.trim() || `Reversión/Anulación de inyección de $${inyeccionARevertir.monto.toFixed(2)} (${inyeccionARevertir.observaciones})`;
+
+      const movimientoBitacora: MovimientoBitacoraCapital = {
+        id: Date.now().toString(),
+        tipo: 'reversion',
+        monto: -inyeccionARevertir.monto,
+        fecha: new Date().toISOString(),
+        motivo: `${motivoFinal} (Inyección original del ${new Date(inyeccionARevertir.fecha).toLocaleDateString()}: "${inyeccionARevertir.observaciones}")`,
+        registradoPor: userData?.nombre || "Dueño",
+        usuarioEmail: user?.email || "",
+        usuarioRol: userData?.rol || "dueño",
+        inyeccionIdRef: inyeccionARevertir.id
+      };
+
+      const updatedBitacora = [movimientoBitacora, ...(empresaData.bitacoraCapital || [])];
+
+      setEmpresaData(prev => ({
+        ...prev,
+        inyeccionesCapital: updatedInyecciones,
+        bitacoraCapital: updatedBitacora
+      }));
+
+      const { doc, setDoc } = await import("firebase/firestore");
+      await setDoc(doc(db, "empresas", userData.empresaId), {
+        inyeccionesCapital: updatedInyecciones,
+        bitacoraCapital: updatedBitacora
+      }, { merge: true });
+
+      toast.success("Inyección revertida exitosamente y asentada en la bitácora");
+      setIsRevertModalOpen(false);
+      setInyeccionARevertir(null);
+      setMotivoReversion("");
+    } catch (e: any) {
+      console.error("Error al revertir inyección:", e);
+      toast.error("Error al revertir la inyección: " + e.message);
+    } finally {
+      setIsReverting(false);
+    }
   };
 
   const handleRemoveBanco = (id: string) => {
@@ -235,23 +315,26 @@ export default function ConfiguracionPage() {
 
                 {userData?.empresaId && (
                   <div className="pt-4 border-t space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
-                        <Label className="text-base font-bold">Historial de Inyecciones de Capital</Label>
-                        <p className="text-xs text-muted-foreground">Registra las veces que aportes más dinero a la empresa.</p>
+                        <Label className="text-base font-bold">Gestión de Capital e Inyecciones</Label>
+                        <p className="text-xs text-muted-foreground">Registra aportes, revierte errores y consulta la bitácora de auditoría.</p>
                       </div>
-                      <Button size="sm" variant="outline" disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'} onClick={() => setIsInyeccionModalOpen(true)}>
-                        <Plus className="mr-2 h-4 w-4" /> Inyectar Capital
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'} onClick={() => setIsInyeccionModalOpen(true)}>
+                          <Plus className="mr-2 h-4 w-4" /> Inyectar Capital
+                        </Button>
+                      </div>
+
                       <Dialog open={isInyeccionModalOpen} onOpenChange={setIsInyeccionModalOpen}>
                         <DialogContent>
                           <DialogHeader>
                             <DialogTitle>Registrar Inyección de Capital</DialogTitle>
-                            <DialogDescription>Añade nuevos fondos a la caja de la empresa.</DialogDescription>
+                            <DialogDescription>Añade nuevos fondos a la caja de la empresa. Este movimiento quedará registrado en la bitácora de auditoría.</DialogDescription>
                           </DialogHeader>
                           <div className="space-y-4 py-4">
                             <div className="space-y-2">
-                              <Label>Monto a Inyectar</Label>
+                              <Label>Monto a Inyectar ($)</Label>
                               <Input 
                                 type="number" 
                                 placeholder="0.00" 
@@ -270,35 +353,192 @@ export default function ConfiguracionPage() {
                           </div>
                           <DialogFooter>
                             <Button variant="outline" onClick={() => setIsInyeccionModalOpen(false)}>Cancelar</Button>
-                            <Button onClick={handleInyectarCapital}>Registrar Inyección</Button>
+                            <Button onClick={handleInyectarCapital}>Registrar e Inyectar</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+
+                      {/* Modal de Reversión / Anulación */}
+                      <Dialog open={isRevertModalOpen} onOpenChange={setIsRevertModalOpen}>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <div className="flex items-center gap-2 text-destructive">
+                              <AlertTriangle className="h-5 w-5" />
+                              <DialogTitle>Revertir Inyección de Capital</DialogTitle>
+                            </div>
+                            <DialogDescription>
+                              Esta acción anulará el aporte de capital seleccionado y descontará el monto del balance general en el Dashboard.
+                            </DialogDescription>
+                          </DialogHeader>
+                          {inyeccionARevertir && (
+                            <div className="space-y-4 py-3">
+                              <div className="bg-muted/50 p-3 rounded-lg border text-sm space-y-1">
+                                <div className="flex justify-between font-medium">
+                                  <span>Monto a revertir:</span>
+                                  <span className="text-destructive font-bold">-${inyeccionARevertir.monto.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                  <span>Fecha original:</span>
+                                  <span>{new Date(inyeccionARevertir.fecha).toLocaleDateString()}</span>
+                                </div>
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                  <span>Origen original:</span>
+                                  <span>{inyeccionARevertir.observaciones}</span>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="motivo-reversion">Motivo de la Reversión (Auditoría) *</Label>
+                                <Input 
+                                  id="motivo-reversion"
+                                  placeholder="Ej. Error al digitar monto por el administrador"
+                                  value={motivoReversion}
+                                  onChange={e => setMotivoReversion(e.target.value)}
+                                />
+                                <p className="text-[11px] text-muted-foreground">
+                                  Este motivo quedará asentado de forma permanente en la bitácora de movimientos para futuras auditorías.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsRevertModalOpen(false)}>Cancelar</Button>
+                            <Button 
+                              variant="destructive" 
+                              disabled={isReverting}
+                              onClick={handleConfirmarReversion}
+                            >
+                              {isReverting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                              Confirmar Reversión
+                            </Button>
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
                     </div>
 
-                    {empresaData.inyeccionesCapital && empresaData.inyeccionesCapital.length > 0 ? (
-                      <div className="border rounded-md overflow-hidden">
-                        <Table>
-                          <TableHeader className="bg-muted">
-                            <TableRow>
-                              <TableHead>Fecha</TableHead>
-                              <TableHead>Monto</TableHead>
-                              <TableHead>Origen</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {empresaData.inyeccionesCapital.map((iny) => (
-                              <TableRow key={iny.id}>
-                                <TableCell className="py-2">{new Date(iny.fecha).toLocaleDateString()}</TableCell>
-                                <TableCell className="py-2 font-medium text-green-600">+${iny.monto.toFixed(2)}</TableCell>
-                                <TableCell className="py-2 text-muted-foreground">{iny.observaciones}</TableCell>
+                    {/* Selector de Pestañas: Inyecciones Activas vs Bitácora de Auditoría */}
+                    <div className="flex items-center gap-2 border-b pb-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={vistaCapitalTab === 'inyecciones' ? 'default' : 'ghost'}
+                        onClick={() => setVistaCapitalTab('inyecciones')}
+                        className="text-xs h-8"
+                      >
+                        Inyecciones Activas ({empresaData.inyeccionesCapital?.length || 0})
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={vistaCapitalTab === 'bitacora' ? 'default' : 'ghost'}
+                        onClick={() => setVistaCapitalTab('bitacora')}
+                        className="text-xs h-8 flex items-center gap-1"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        Bitácora de Auditoría ({empresaData.bitacoraCapital?.length || 0})
+                      </Button>
+                    </div>
+
+                    {vistaCapitalTab === 'inyecciones' ? (
+                      empresaData.inyeccionesCapital && empresaData.inyeccionesCapital.length > 0 ? (
+                        <div className="border rounded-md overflow-hidden">
+                          <Table>
+                            <TableHeader className="bg-muted">
+                              <TableRow>
+                                <TableHead>Fecha</TableHead>
+                                <TableHead>Monto</TableHead>
+                                <TableHead>Origen / Observación</TableHead>
+                                <TableHead>Registrado Por</TableHead>
+                                <TableHead className="text-right">Acciones</TableHead>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
+                            </TableHeader>
+                            <TableBody>
+                              {empresaData.inyeccionesCapital.map((iny) => (
+                                <TableRow key={iny.id}>
+                                  <TableCell className="py-2">{new Date(iny.fecha).toLocaleDateString()}</TableCell>
+                                  <TableCell className="py-2 font-semibold text-emerald-600 dark:text-emerald-400">
+                                    +${iny.monto.toFixed(2)}
+                                  </TableCell>
+                                  <TableCell className="py-2 text-muted-foreground">{iny.observaciones}</TableCell>
+                                  <TableCell className="py-2 text-xs text-muted-foreground">{iny.registradoPor || 'Dueño'}</TableCell>
+                                  <TableCell className="py-2 text-right">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
+                                      title="Revertir o anular esta inyección"
+                                      onClick={() => {
+                                        setInyeccionARevertir(iny);
+                                        setMotivoReversion("");
+                                        setIsRevertModalOpen(true);
+                                      }}
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> Revertir
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic bg-muted/20 p-4 rounded text-center">
+                          No hay inyecciones de capital activas actualmente.
+                        </p>
+                      )
                     ) : (
-                      <p className="text-sm text-muted-foreground italic bg-muted/20 p-3 rounded text-center">No hay inyecciones de capital registradas.</p>
+                      /* Vista de Bitácora de Auditoría */
+                      empresaData.bitacoraCapital && empresaData.bitacoraCapital.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-muted-foreground">
+                            Registro histórico e inmutable de todos los movimientos de capital (ingresos y reversiones) con fines de auditoría y control contable.
+                          </p>
+                          <div className="border rounded-md overflow-hidden">
+                            <Table>
+                              <TableHeader className="bg-muted">
+                                <TableRow>
+                                  <TableHead>Fecha y Hora</TableHead>
+                                  <TableHead>Tipo</TableHead>
+                                  <TableHead>Monto</TableHead>
+                                  <TableHead>Motivo / Justificación</TableHead>
+                                  <TableHead>Responsable</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {empresaData.bitacoraCapital.map((mov) => (
+                                  <TableRow key={mov.id}>
+                                    <TableCell className="py-2 text-xs">
+                                      {new Date(mov.fecha).toLocaleString()}
+                                    </TableCell>
+                                    <TableCell className="py-2">
+                                      <Badge 
+                                        variant={mov.tipo === 'inyeccion' ? 'default' : 'destructive'} 
+                                        className={mov.tipo === 'inyeccion' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
+                                      >
+                                        {mov.tipo === 'inyeccion' ? '+ INYECCIÓN' : '- REVERSIÓN'}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className={`py-2 font-bold ${mov.monto >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'}`}>
+                                      {mov.monto >= 0 ? `+$${mov.monto.toFixed(2)}` : `-$${Math.abs(mov.monto).toFixed(2)}`}
+                                    </TableCell>
+                                    <TableCell className="py-2 text-xs max-w-[240px] truncate" title={mov.motivo}>
+                                      {mov.motivo}
+                                    </TableCell>
+                                    <TableCell className="py-2 text-xs text-muted-foreground">
+                                      <span className="font-medium text-foreground">{mov.registradoPor}</span>
+                                      {mov.usuarioRol && <span className="block text-[10px] capitalize text-muted-foreground">({mov.usuarioRol})</span>}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic bg-muted/20 p-4 rounded text-center">
+                          No hay registros en la bitácora de auditoría aún. Todos los nuevos movimientos quedarán asentados aquí automáticamente.
+                        </p>
+                      )
                     )}
                   </div>
                 )}
@@ -464,13 +704,6 @@ export default function ConfiguracionPage() {
 }
 
 // Componente para la pestaña de Equipo
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { UserPlus } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-
 function EquipoTab() {
   const { userData } = useAuth();
   const [miembros, setMiembros] = useState<any[]>([]);

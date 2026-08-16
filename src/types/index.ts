@@ -26,6 +26,18 @@ export interface InyeccionCapital {
   registradoPor: string;
 }
 
+export interface MovimientoBitacoraCapital {
+  id: string;
+  tipo: 'inyeccion' | 'reversion' | 'ajuste';
+  monto: number;
+  fecha: string;
+  motivo: string;
+  registradoPor: string;
+  usuarioEmail?: string;
+  usuarioRol?: string;
+  inyeccionIdRef?: string;
+}
+
 export interface Empresa {
   id: string;
   nombre: string; // Nombre Comercial
@@ -40,6 +52,7 @@ export interface Empresa {
   estado: 'activa' | 'suspendida';
   capitalInicial?: number; // Inversión inicial original
   inyeccionesCapital?: InyeccionCapital[];
+  bitacoraCapital?: MovimientoBitacoraCapital[];
   cuentasBancarias?: CuentaBancaria[];
   createdAt: any;
 }
