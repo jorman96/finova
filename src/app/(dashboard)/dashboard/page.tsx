@@ -15,8 +15,12 @@ import {
   Loader2, 
   Calendar,
   CalendarRange,
-  RotateCcw
+  RotateCcw,
+  Landmark,
+  ArrowRight,
+  ShieldCheck
 } from "lucide-react";
+import Link from "next/link";
 import { collection, query, where, onSnapshot, orderBy, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,6 +50,9 @@ export default function DashboardPage() {
   const [rawPrestamos, setRawPrestamos] = useState<any[]>([]);
   const [rawPagos, setRawPagos] = useState<any[]>([]);
   const [rawCuotasVencidas, setRawCuotasVencidas] = useState<any[]>([]);
+  const [rawInversiones, setRawInversiones] = useState<any[]>([]);
+  const [rawCuotasInversionistas, setRawCuotasInversionistas] = useState<any[]>([]);
+  const [rawPagosInversionistas, setRawPagosInversionistas] = useState<any[]>([]);
 
   // Filtro de fechas (Por defecto: 'mes' -> mes en curso)
   const [periodo, setPeriodo] = useState<PeriodoTipo>('mes');
@@ -118,12 +125,42 @@ export default function DashboardPage() {
       }
     );
 
+    const unsubInversiones = onSnapshot(
+      query(collection(db, "inversion_contratos"), where("empresaId", "==", userData.empresaId)),
+      (snap) => {
+        const list: any[] = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setRawInversiones(list);
+      }
+    );
+
+    const unsubCuotasInv = onSnapshot(
+      query(collection(db, "cuotas_inversionistas"), where("empresaId", "==", userData.empresaId)),
+      (snap) => {
+        const list: any[] = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setRawCuotasInversionistas(list);
+      }
+    );
+
+    const unsubPagosInv = onSnapshot(
+      query(collection(db, "pagos_inversionistas"), where("empresaId", "==", userData.empresaId)),
+      (snap) => {
+        const list: any[] = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setRawPagosInversionistas(list);
+      }
+    );
+
     return () => {
       unsubEmpresa();
       unsubPrestamos();
       unsubPagos();
       unsubClientes();
       unsubMora();
+      unsubInversiones();
+      unsubCuotasInv();
+      unsubPagosInv();
     };
   }, [userData?.empresaId]);
 
@@ -180,10 +217,42 @@ export default function DashboardPage() {
     const pagosFiltrados = rawPagos.filter(p => isWithinRange(p.fecha));
     const totalRecaudadoPeriodo = pagosFiltrados.reduce((sum, p) => sum + (p.monto || 0), 0);
 
-    // Caja Disponible (Total Histórico Real: Inversión + Total Pagos Históricos - Total Prestado Histórico)
+    // Fondeo de Inversionistas Destinado a Cartera de Préstamos
+    const totalFondeoCartera = rawInversiones.reduce((sum: number, c: any) => sum + (c.montoCartera || 0), 0);
+    const totalPagosInversionistas = rawPagosInversionistas.reduce((sum: number, p: any) => sum + (p.monto || 0), 0);
+
+    // Caja Disponible (Total Histórico Real: Capital Propio + Fondeo Cartera Inversionistas + Total Pagos Clientes - Total Prestado Clientes - Liquidaciones a Inversionistas)
     const totalPrestadoHistorico = rawPrestamos.reduce((sum, p) => sum + (p.monto || 0), 0);
     const totalPagosHistorico = rawPagos.reduce((sum, p) => sum + (p.monto || 0), 0);
-    const cajaDisponible = capitalInvertido - totalPrestadoHistorico + totalPagosHistorico;
+    const cajaDisponible = (capitalInvertido + totalFondeoCartera) - totalPrestadoHistorico + totalPagosHistorico - totalPagosInversionistas;
+
+    // Métricas de Cobertura y Spread de Inversionistas del Período
+    // 1. Intereses cobrados a clientes prestatarios en el período
+    let interesCobradoClientesPeriodo = 0;
+    pagosFiltrados.forEach(p => {
+      if (Array.isArray(p.cuotasAplicadas) && p.cuotasAplicadas.length > 0) {
+        p.cuotasAplicadas.forEach((ca: any) => {
+          interesCobradoClientesPeriodo += (ca.interes || 0);
+        });
+      }
+    });
+    // Si no está desglosado en cuotasAplicadas, estimamos con la proporción de interés del período
+    if (interesCobradoClientesPeriodo === 0 && totalRecaudadoPeriodo > 0) {
+      const totalColocado = capitalPrestadoPeriodo + interesProyectadoPeriodo;
+      const factorInteres = totalColocado > 0 ? (interesProyectadoPeriodo / totalColocado) : 0.18;
+      interesCobradoClientesPeriodo = totalRecaudadoPeriodo * factorInteres;
+    }
+
+    // 2. Intereses comprometidos con inversionistas en el período
+    const cuotasInvPeriodo = rawCuotasInversionistas.filter(c => isWithinRange(c.fechaVencimiento));
+    const interesComprometidoInvPeriodo = cuotasInvPeriodo.reduce((sum: number, c: any) => sum + (c.interes || 0), 0);
+    const cuotaTotalInvPeriodo = cuotasInvPeriodo.reduce((sum: number, c: any) => sum + (c.totalCuota || 0), 0);
+
+    // 3. Spread / Margen neto de intermediación
+    const spreadIntermediacion = interesCobradoClientesPeriodo - interesComprometidoInvPeriodo;
+    const ratioCobertura = interesComprometidoInvPeriodo > 0
+      ? ((interesCobradoClientesPeriodo / interesComprometidoInvPeriodo) * 100).toFixed(0)
+      : null;
 
     // Mora (Riesgo)
     let moraVencido = 0;
@@ -201,6 +270,14 @@ export default function DashboardPage() {
     return {
       capitalInvertido,
       cajaDisponible,
+      totalFondeoCartera,
+      totalPagosInversionistas,
+      interesCobradoClientesPeriodo,
+      interesComprometidoInvPeriodo,
+      cuotaTotalInvPeriodo,
+      spreadIntermediacion,
+      ratioCobertura,
+      inversionesActivasCount: rawInversiones.filter(i => i.estado === 'activo').length,
       capitalPrestadoPeriodo,
       totalRecaudadoPeriodo,
       interesProyectadoPeriodo,
@@ -210,7 +287,7 @@ export default function DashboardPage() {
       pagosFiltrados,
       prestamosFiltradosCount: prestamosFiltrados.length
     };
-  }, [empresaData, rawPrestamos, rawPagos, rawCuotasVencidas, dateRange]);
+  }, [empresaData, rawPrestamos, rawPagos, rawCuotasVencidas, rawInversiones, rawCuotasInversionistas, rawPagosInversionistas, dateRange]);
 
   if (loading) {
     return (
@@ -233,7 +310,7 @@ export default function DashboardPage() {
       title: "Caja Disponible", 
       value: `$${filteredMetrics.cajaDisponible.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
       icon: Wallet, 
-      trend: "Liquidez actual",
+      trend: filteredMetrics.totalFondeoCartera > 0 ? "Liquidez (incluye fondeo)" : "Liquidez actual",
       color: "text-emerald-500"
     },
     { 
@@ -415,6 +492,84 @@ export default function DashboardPage() {
         ))}
       </div>
       
+      {/* Panel de Control y Cobertura de Inversionistas */}
+      {(filteredMetrics.totalFondeoCartera > 0 || filteredMetrics.inversionesActivasCount > 0) && (
+        <Card className="bg-gradient-to-r from-emerald-500/10 via-card to-purple-500/10 border-emerald-500/30 shadow-xs">
+          <CardHeader className="p-4 pb-2">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Landmark className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    Fondo de Inversionistas & Cobertura de Intereses
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Comparativa de intereses cobrados a prestatarios vs compromisos de liquidación a fondeadores.
+                  </p>
+                </div>
+              </div>
+              <Link href="/inversionistas">
+                <Button variant="outline" size="sm" className="h-7 text-xs gap-1 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10">
+                  Ver Inversionistas <ArrowRight className="h-3 w-3" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-2.5 rounded-lg bg-card/80 border">
+                <span className="text-muted-foreground block text-[11px]">Intereses Cobrados a Clientes:</span>
+                <span className="text-base font-bold text-emerald-600 dark:text-emerald-400">
+                  ${filteredMetrics.interesCobradoClientesPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-muted-foreground block">Recaudación del período</span>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-card/80 border">
+                <span className="text-muted-foreground block text-[11px]">Compromiso a Inversionistas:</span>
+                <span className="text-base font-bold text-purple-600 dark:text-purple-400">
+                  ${filteredMetrics.interesComprometidoInvPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-muted-foreground block">
+                  {filteredMetrics.cuotaTotalInvPeriodo > 0 ? `Cuota total: $${filteredMetrics.cuotaTotalInvPeriodo.toFixed(2)}` : 'Sin cuotas este período'}
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-card/80 border">
+                <span className="text-muted-foreground block text-[11px]">Margen Neto (Spread):</span>
+                <span className={`text-base font-bold ${filteredMetrics.spreadIntermediacion >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+                  ${filteredMetrics.spreadIntermediacion.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                <span className="text-[10px] text-muted-foreground block">
+                  Ganancia neta tras pagar fondeo
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-card/80 border flex flex-col justify-between">
+                <div>
+                  <span className="text-muted-foreground block text-[11px]">Índice de Cobertura:</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {filteredMetrics.ratioCobertura ? (
+                      <>
+                        <span className="text-base font-bold text-foreground">{filteredMetrics.ratioCobertura}%</span>
+                        <Badge variant="outline" className={`text-[10px] ${parseFloat(filteredMetrics.ratioCobertura) >= 100 ? "text-emerald-600 border-emerald-500/30" : "text-amber-600 border-amber-500/30"}`}>
+                          {parseFloat(filteredMetrics.ratioCobertura) >= 100 ? "Saludable" : "Alerta"}
+                        </Badge>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">100% (Sin cuotas)</span>
+                    )}
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Fondo en cartera: ${filteredMetrics.totalFondeoCartera.toLocaleString('en-US', { minimumFractionDigits: 0 })}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Gráfico y Últimos Movimientos */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 pt-2">
         <Card className="col-span-4">

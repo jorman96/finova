@@ -144,3 +144,88 @@ export interface Pago {
   fecha: any;
   registradoPor: string;
 }
+
+export interface Inversionista {
+  id: string;
+  empresaId: string;
+  nombres: string;
+  apellidos?: string;
+  identificacion: string; // Cédula o RUC
+  telefono: string;
+  correo?: string;
+  direccion?: string;
+  banco?: string;
+  tipoCuenta?: string;
+  numeroCuenta?: string;
+  titularCuenta?: string;
+  estado: 'activo' | 'inactivo';
+  totalInvertido?: number;
+  totalPagado?: number;
+  saldoPendiente?: number;
+  createdAt: any;
+}
+
+export type ModalidadPagoInversionista = 
+  | 'interes_mensual_capital_al_vencimiento' // Interés cada mes, capital al final
+  | 'cuota_amortizada_mensual'              // Capital + interés prorrateado mes a mes
+  | 'devolucion_capital_en_cuotas';          // Sin interés: solo capital en cuotas mensuales
+
+export interface InversionContrato {
+  id: string;
+  empresaId: string;
+  inversionistaId: string;
+  inversionistaNombre: string;
+  inversionistaIdentificacion?: string;
+  montoTotal: number;
+  montoCartera: number;   // Destinado a préstamos (fondo prestable)
+  montoOtros: number;     // Destinado a otros gastos/pagos
+  tieneInteres: boolean;
+  tasaInteresMensual: number; // % mensual pactado
+  modalidadPago: ModalidadPagoInversionista;
+  plazoMeses: number;
+  fechaInicio: string;
+  fechaPrimerPago: string;
+  totalInteresPagar: number;
+  totalPagar: number;
+  totalPagado: number;
+  saldoPendiente: number;
+  estado: 'activo' | 'liquidado' | 'cancelado';
+  observaciones?: string;
+  createdAt: any;
+}
+
+export interface CuotaInversionista {
+  id: string;
+  empresaId: string;
+  inversionContratoId: string;
+  inversionistaId: string;
+  numeroCuota: number;
+  fechaVencimiento: string;
+  capital: number;
+  interes: number;
+  totalCuota: number;
+  montoPagado: number;
+  saldoRestante: number;
+  estado: 'pendiente' | 'pagada' | 'parcial';
+  fechaPago?: string;
+}
+
+export interface PagoInversionista {
+  id: string;
+  empresaId: string;
+  inversionContratoId: string;
+  inversionistaId: string;
+  inversionistaNombre?: string;
+  cuotaInversionistaId?: string;
+  numeroCuota?: number;
+  monto: number;
+  montoCapital: number;
+  montoInteres: number;
+  metodo: string;
+  cuentaOrigen?: string;
+  observaciones?: string;
+  comprobanteUrl?: string | null;
+  fecha: any;
+  registradoPor: string;
+}
+

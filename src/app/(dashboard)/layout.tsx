@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Loader2, LayoutDashboard, Users, CreditCard, DollarSign, AlertCircle, FileText, Settings, LogOut, Menu } from "lucide-react";
+import { Loader2, LayoutDashboard, Users, CreditCard, DollarSign, AlertCircle, FileText, Settings, LogOut, Menu, Landmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -58,6 +58,7 @@ export default function DashboardLayout({
 
   if (userData?.rol === 'dueño' || userData?.rol === 'superadmin' || userData?.rol === 'admin') {
     navItems.push(
+      { name: "Inversionistas", href: "/inversionistas", icon: Landmark },
       { name: "Reportes", href: "/reportes", icon: FileText },
       { name: "Configuración", href: "/configuracion", icon: Settings }
     );
