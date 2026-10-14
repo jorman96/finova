@@ -19,6 +19,7 @@ import { auth, db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { InyeccionCapital, MovimientoBitacoraCapital } from "@/types";
+import { ResetValoresDialog } from "@/components/configuracion/ResetValoresDialog";
 
 export default function ConfiguracionPage() {
   const { user, userData } = useAuth();
@@ -697,6 +698,26 @@ export default function ConfiguracionPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Zona de Peligro: Reinicio de Valores Financieros */}
+          {(userData?.rol === 'dueño' || userData?.rol === 'superadmin') && (
+            <Card className="max-w-2xl border-destructive/40 shadow-xs">
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-5 w-5" />
+                  <CardTitle className="text-base font-bold text-destructive">
+                    Zona de Peligro: Reiniciar Valores Financieros
+                  </CardTitle>
+                </div>
+                <CardDescription>
+                  Restaura todos los saldos, préstamos, cuotas y cobros a $0.00 para empezar en limpio. Tu lista de clientes y usuarios no se tocarán.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResetValoresDialog />
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
