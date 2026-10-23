@@ -25,6 +25,13 @@ test('personal updates work but roles, company and activation are immutable',asy
 test('only managers create credits; tenant cannot be reassigned',async()=>{for(const r of roles){const db=env.authenticatedContext(uid(r)).firestore();const operation=setDoc(doc(db,'prestamos','new_'+r),{empresaId:'a',clienteId:'a'});await (['superadmin','dueño','admin'].includes(r)?assertSucceeds(operation):assertFails(operation));}await assertFails(updateDoc(doc(env.authenticatedContext('owner').firestore(),'prestamos','a'),{empresaId:'b'}));});
 test('cashiers may apply legacy repayments but cannot change principal',async()=>{const db=env.authenticatedContext('cajero').firestore();await assertSucceeds(updateDoc(doc(db,'prestamos','a'),{saldoRestante:8}));await assertFails(updateDoc(doc(db,'prestamos','a'),{monto:0}));});
 test('history cannot be erased and security events cannot be forged in browser',async()=>{const db=env.authenticatedContext('owner').firestore();await assertFails(deleteDoc(doc(db,'prestamos','a')));await assertFails(setDoc(doc(db,'auditoria','fake'),{empresaId:'a'}));await assertFails(setDoc(doc(db,'security_events','fake'),{empresaId:'a'}));});
+test('even platform admins cannot mutate or read the ledger directly from the browser',async()=>{
+ for(const r of roles){const db=env.authenticatedContext(uid(r)).firestore();
+  await assertFails(setDoc(doc(db,'accounting','a'),{enabled:true,currency:'USD'}));
+  await assertFails(setDoc(doc(db,'accounting','a','entries','fake'),{lines:[],empresaId:'a'}));
+  await assertFails(getDoc(doc(db,'accounting','a','savings','fake')));
+ }
+});
 test('new files are scoped by tenant and legacy documents remain readable',async()=>{
  const owner=env.authenticatedContext('owner').storage(),other=env.authenticatedContext('consulta').storage();
  await assertSucceeds(uploadBytes(ref(owner,'empresas/a/docs/test.pdf'),new Uint8Array([1,2]),{contentType:'application/pdf'}));

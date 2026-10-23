@@ -66,6 +66,7 @@ export default function DashboardLayout({
     navItems.push(
       { name: "Inversionistas", href: "/inversionistas", icon: Landmark },
       { name: "Reportes", href: "/reportes", icon: FileText },
+      { name: "Contabilidad", href: "/contabilidad", icon: Landmark },
       { name: "Configuración", href: "/configuracion", icon: Settings }
     );
   }

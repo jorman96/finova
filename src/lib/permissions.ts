@@ -8,6 +8,6 @@ export function canAssignRole(caller: Role, target: Role) {
 }
 export function canAccessPage(role: Role, path: string) {
   if (path.startsWith("/master")) return role === "superadmin";
-  if (["/configuracion", "/inversionistas", "/reportes", "/tesoreria"].some(p => path.startsWith(p))) return managers.includes(role);
+  if (["/configuracion", "/inversionistas", "/reportes", "/tesoreria", "/contabilidad"].some(p => path.startsWith(p))) return managers.includes(role);
   return true;
 }

@@ -28,4 +28,5 @@ jobs:
       - run: npm run test:clientes
       - run: npm run test:backup
       - run: npm run test:security
+      - run: npm run test:accounting
       - run: npm run build

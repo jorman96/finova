@@ -26,6 +26,10 @@ service cloud.firestore {
    allow update: if sameTenant() && tenant(resource.data.empresaId) && profile().rol in ['superadmin','dueño','admin','cajero'];
    allow delete: if false;
   }
+  // The accounting API owns all writes and reads, including subcollections.
+  match /accounting/{document=**} {
+   allow read, write: if false;
+  }
   match /{name}/{id} {
    allow read: if name in ['prestamos','cuotas','pagos'] && (root() || tenant(resource.data.empresaId));
    allow read: if name in ['inversionistas','inversion_contratos','cuotas_inversionistas','pagos_inversionistas','settings','movimientos_caja','auditoria'] && (root() || (manager() && tenant(resource.data.empresaId)));
