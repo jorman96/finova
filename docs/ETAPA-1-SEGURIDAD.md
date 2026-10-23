@@ -33,7 +33,7 @@ Desarrollo y previews no pueden usar el proyecto productivo. Las pruebas y CI us
 ## Verificación y publicación
 
 - Prueba de búsqueda; prueba de cifrado/tipos/autenticidad.
-- Ocho pruebas de reglas, siete roles y archivos heredados.
+- Nueve pruebas de reglas, siete roles y archivos heredados.
 - Veinticinco verificaciones integradas: eliminación, separación, usuarios, respaldos, OTP y logout.
 - Compilación, comprobación de tipos y revisión de código de seguridad.
 - Comparar la huella de perfiles y los conteos antes y después. El inventario previo no detectó préstamos sin clientes/cuotas, cuotas o pagos sin préstamo, ni clientes sin empresa; eso no constituye conciliación contable de importes.
@@ -46,3 +46,9 @@ Los errores inesperados tienen referencia y registro estructurado; los errores d
 Pendientes para cerrar la etapa operativa: configurar y validar correo transaccional, un proyecto de staging real, custodia externa del respaldo/clave, recuperación de credenciales ensayada y responsables de incidentes. Inscripción MFA individual pendiente de cada usuario. Las operaciones financieras siguen usando lógica heredada en el cliente: su traslado completo al servidor y conciliación se debe hacer de forma separada, con validación contable.
 
 Rollback: conservar el despliegue anterior y las reglas previas en el respaldo privado. No reabrir reglas globales por defecto. Una vez inscritos usuarios MFA, mantener siempre un login compatible con TOTP; no volver a un login que ignore el segundo factor.
+
+La auditoría final de producción arroja cero alertas. La auditoría completa conserva cinco alertas en la cadena de ESLint/Next (braces y dependientes); el registro aún publica braces 3.0.3. La alternativa automática sugería degradar Next/ESLint a una versión mayor anterior, por lo que no se aplicó. Son herramientas de desarrollo y no se incluyen en el runtime productivo; deben seguirse hasta una corrección compatible.
+
+## Incidente de preparación de despliegue
+
+La primera carga CLI de prueba incluyó la carpeta privada de respaldo y su clave, aunque Git la ignoraba. Se retiró ese despliegue sin promoverlo al dominio público y se añadieron exclusiones explícitas en .vercelignore. El control de publicación debe consultar la lista de archivos de cada carga y bloquear la activación si encuentra carpetas privadas, claves o archivos de entorno. Los archivos estuvieron en el proyecto Vercel del propietario; borrar el despliegue no demuestra purga inmediata de todas las copias internas del proveedor. No se publicaron en GitHub ni en el directorio público de la aplicación.

@@ -40,7 +40,7 @@ for (const service of ['cloud.firestore', 'firebase.storage/' + process.env.NEXT
   const release = await api('https://firebaserules.googleapis.com/v1/projects/' + project + '/releases/' + service);
   if (release.rulesetName) {
     const rules = await api('https://firebaserules.googleapis.com/v1/' + release.rulesetName);
-    for (const f of rules.source?.files || []) await writeFile('.private-backups/' + service.replaceAll('/', '_') + '.before.rules', f.content);
+    for (const f of rules.source?.files || []) await writeFile('.private-backups/' + service.replaceAll('/', '_') + '.before.rules', f.content, { flag: 'wx' }).catch(error => { if (error.code !== 'EEXIST') throw error; });
     summary[service] = { ruleset: release.rulesetName, saved: !!rules.source?.files?.length };
   } else summary[service] = release;
 }
