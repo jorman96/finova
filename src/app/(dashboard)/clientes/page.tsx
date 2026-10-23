@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { EliminarClienteDialog } from "@/components/clientes/EliminarClienteDialog";
+import { managers } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -128,6 +130,7 @@ export default function ClientesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    {userData && managers.includes(userData.rol) && <EliminarClienteDialog cliente={cliente} onDeleted={() => {}} />}
                     <DropdownMenu>
                       <DropdownMenuTrigger render={<Button variant="ghost" className="h-8 w-8 p-0" />}>
                         <MoreVertical className="h-4 w-4" />

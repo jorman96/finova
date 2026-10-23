@@ -43,3 +43,8 @@ next-env.d.ts
 # firebase and secrets
 .firebase/
 src/lib/service-account.json
+
+*-debug.log
+
+/public/sw.js
+/public/workbox-*.js

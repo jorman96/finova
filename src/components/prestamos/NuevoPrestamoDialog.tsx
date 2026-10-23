@@ -4,11 +4,12 @@ import { useState, useEffect } from "react";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger 
 } from "@/components/ui/dialog";
+import { ClientePicker } from "@/components/clientes/ClientePicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Loader2 } from "lucide-react";
-import { collection, addDoc, serverTimestamp, getDocs, writeBatch, doc, query, where } from "firebase/firestore";
+import { collection, serverTimestamp, getDocs, runTransaction, doc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -39,7 +40,7 @@ export function NuevoPrestamoDialog() {
     if (open && userData?.empresaId) {
       getDocs(query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId))).then(snapshot => {
         setClientes(snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Cliente)));
-      });
+      }).catch(() => { setClientes([]); toast.error("No se pudo cargar la lista de clientes."); });
       // Resetear el formulario al abrir
       setClienteId("");
       setMonto("");
@@ -119,10 +120,14 @@ export function NuevoPrestamoDialog() {
         createdAt: serverTimestamp()
       };
 
-      const prestamoRef = await addDoc(collection(db, "prestamos"), prestamoData);
+      const prestamoRef = doc(collection(db, "prestamos"));
+      await runTransaction(db, async batch => {
+        const currentClient = await batch.get(doc(db, "clientes", clienteId));
+        if (!currentClient.exists() || currentClient.data().empresaId !== userData.empresaId) throw new Error("El cliente ya no está disponible. Vuelve a seleccionarlo.");
+        batch.set(prestamoRef, prestamoData);
 
       // Crear cuotas en Batch
-      const batch = writeBatch(db);
+
       simulacion.forEach(cuota => {
         const cuotaRef = doc(collection(db, "cuotas"));
         batch.set(cuotaRef, {
@@ -146,13 +151,13 @@ export function NuevoPrestamoDialog() {
          batch.update(clienteRef, { estado: 'activo' });
       }
 
-      await batch.commit();
+      });
 
       toast.success("Préstamo y tabla de amortización creados.");
       setOpen(false);
     } catch (error) {
       console.error(error);
-      toast.error("Error al crear el préstamo");
+      toast.error(error instanceof Error ? error.message : "Error al crear el préstamo");
     } finally {
       setLoading(false);
     }
@@ -173,24 +178,8 @@ export function NuevoPrestamoDialog() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>Cliente</Label>
-            <Select value={clienteId} onValueChange={(val) => val && setClienteId(val)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccione un cliente">
-                  {clienteId && clientes.length > 0
-                    ? (() => {
-                        const c = clientes.find((cli) => cli.id === clienteId);
-                        return c ? `${c.nombres} ${c.apellidos} - ${c.cedula}` : "Seleccione un cliente";
-                      })()
-                    : "Seleccione un cliente"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {clientes.map(c => (
-                  <SelectItem key={c.id} value={c.id}>{c.nombres} {c.apellidos} - {c.cedula}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="credito-cliente">Cliente</Label>
+            <ClientePicker clientes={clientes} value={clienteId} onChange={setClienteId} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
