@@ -33,6 +33,16 @@ try{
  async function api(path,body,token){return fetch('http://127.0.0.1:3110'+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)});}
  assert.equal((await api('/api/admin/users',{email:'bad@example.test',password:'LongPassword123!',nombre:'Test',empresaId:'a',rol:'superadmin'},owner)).status,403);count++;console.log('PASS owner cannot create platform administrators');
  assert.equal((await api('/api/admin/users',{email:'cashier-action@example.test',password:'LongPassword123!',nombre:'Test',empresaId:'a',rol:'cajero'},cashier)).status,403);count++;console.log('PASS cashier cannot create accounts');
+ const platform=await user('platformOperator','superadmin','a',true);
+ for(const [rol,empresaId,email,token] of [['dueño','b','  NEW.OWNER@EXAMPLE.TEST  ',platform],['admin','b','new.admin@example.test',platform],['admin','a','team.admin@example.test',owner]]){
+  const created=await api('/api/admin/users',{email,password:'LongPassword123!',nombre:'  Persona de prueba  ',empresaId,rol},token);
+  assert.equal(created.status,200,await created.clone().text());const result=await created.json();
+  const profile=(await db.doc('usuarios/'+result.uid).get()).data();assert.equal(profile.empresaId,empresaId);assert.equal(profile.rol,rol);assert.equal(profile.nombre,'Persona de prueba');assert.equal(profile.email,email.trim().toLowerCase());assert.ok((await auth.getUser(result.uid)).uid);count++;
+ }console.log('PASS platform creates owner or admin for selected company; owner creates own-company admin');
+ const shortPassword=await api('/api/admin/users',{email:'short-pass@example.test',password:'short',nombre:'Persona',empresaId:'a',rol:'admin'},owner);assert.equal(shortPassword.status,400);assert.ok((await shortPassword.json()).fields.password);count++;console.log('PASS short password returns actionable field error');
+ const duplicate=await api('/api/admin/users',{email:'team.admin@example.test',password:'AnotherPassword123!',nombre:'Otra persona',empresaId:'a',rol:'admin'},owner);assert.equal(duplicate.status,409);assert.ok((await duplicate.json()).fields.email);assert.equal((await auth.getUserByEmail('team.admin@example.test')).displayName,'Persona de prueba');count++;console.log('PASS duplicate email is explained without changing existing account');
+ assert.equal((await api('/api/admin/users',{email:'foreign-admin@example.test',password:'LongPassword123!',nombre:'Test',empresaId:'b',rol:'admin'},owner)).status,403);count++;
+ assert.equal((await api('/api/admin/users',{email:'owner-escalation@example.test',password:'LongPassword123!',nombre:'Test',empresaId:'a',rol:'dueño'},owner)).status,403);count++;console.log('PASS company owner cannot create another owner or foreign-company admin');
  for(const path of ['/api/admin/backup','/api/security/status','/api/security/events','/api/email/recibo','/api/email/cobranza']){assert.equal((await api(path,{})).status,401);count++;}console.log('PASS sensitive endpoints require authentication');
  assert.equal((await api('/api/admin/backup',{},cashier)).status,403);count++;
  const backup=await api('/api/admin/backup',{},owner);assert.equal(backup.status,200);assert.equal((await backup.json()).empresaId,'a');count++;

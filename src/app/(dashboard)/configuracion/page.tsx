@@ -1,5 +1,7 @@
 "use client";
 
+import { UserAccessDialog } from "@/components/configuracion/UserAccessDialog";
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { LogOut, Save, Loader2, Moon, Sun, Monitor, Plus, Trash2, RotateCcw, AlertTriangle, ShieldCheck, UserPlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { useTheme } from "next-themes";
@@ -732,8 +734,6 @@ function EquipoTab() {
   
   // Nuevo Miembro
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [nuevo, setNuevo] = useState({ nombre: "", email: "", password: "", rol: "cajero" });
-  const [creando, setCreando] = useState(false);
 
   useEffect(() => {
     if (userData?.empresaId) {
@@ -750,37 +750,6 @@ function EquipoTab() {
       console.error(e);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreando(true);
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          ...nuevo,
-          empresaId: userData?.empresaId,
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error creando usuario");
-
-      toast.success(`Usuario ${nuevo.rol} creado.`);
-      setIsModalOpen(false);
-      setNuevo({ nombre: "", email: "", password: "", rol: "cajero" });
-      loadMiembros();
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setCreando(false);
     }
   };
 
@@ -801,50 +770,11 @@ function EquipoTab() {
           <CardTitle>Equipo de Trabajo</CardTitle>
           <CardDescription>Crea cuentas para tus cajeros y cobradores.</CardDescription>
         </div>
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          <DialogTrigger render={<Button />}>
-            <UserPlus className="mr-2 h-4 w-4" /> Nuevo Miembro
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Crear Nuevo Empleado</DialogTitle>
-              <DialogDescription>
-                El usuario podrá iniciar sesión inmediatamente con el correo y contraseña que le asignes.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Nombre del Empleado</Label>
-                <Input required value={nuevo.nombre} onChange={e => setNuevo({...nuevo, nombre: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Correo Electrónico (Login)</Label>
-                <Input type="email" required value={nuevo.email} onChange={e => setNuevo({...nuevo, email: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Contraseña nueva (mínimo 12 caracteres)</Label>
-                <Input type="password" minLength={12} autoComplete="new-password" required value={nuevo.password} onChange={e => setNuevo({...nuevo, password: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Rol del Sistema</Label>
-                <Select value={nuevo.rol} onValueChange={val => setNuevo({...nuevo, rol: val || "cajero"})}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cajero">Cajero (Solo registra cobros)</SelectItem>
-                    <SelectItem value="cobrador">Cobrador (Solo ve la Mora)</SelectItem>
-                    <SelectItem value="admin">Administrador (Acceso total local)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <DialogFooter>
-                <Button type="submit" disabled={creando}>
-                  {creando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Crear Cuenta
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => setIsModalOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> Nuevo miembro</Button>
+        <UserAccessDialog open={isModalOpen} onOpenChange={setIsModalOpen}
+          empresaId={userData?.empresaId || ""} empresaNombre="Tu financiera"
+          allowedRoles={["cajero", "cobrador", "admin"]}
+          onCreated={() => { toast.success("Cuenta de acceso creada correctamente."); void loadMiembros(); }} />
       </CardHeader>
       <CardContent>
         {loading ? (
