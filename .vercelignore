@@ -1,4 +1,7 @@
 .git
+.vercel
+.next
+node_modules
 .private-backups
 .private-backups/**
 **/.private-backups/**
@@ -9,6 +12,7 @@
 *.encrypted.json
 **/*.encrypted.json
 *-debug.log
+*.log
 **/*-debug.log
 .test-build
 .firebase
