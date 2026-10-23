@@ -41,7 +41,7 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
   const [pagos, setPagos] = useState<PagoInversionista[]>([]);
 
   useEffect(() => {
-    if (!contratoId) return;
+    if (!contratoId || !userData?.empresaId) return;
 
     setLoading(true);
 
@@ -63,7 +63,7 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
     });
 
     const unsubCuotas = onSnapshot(
-      query(collection(db, "cuotas_inversionistas"), where("inversionContratoId", "==", contratoId)),
+      query(collection(db, "cuotas_inversionistas"), where("empresaId", "==", userData.empresaId), where("inversionContratoId", "==", contratoId)),
       snap => {
         const list: CuotaInversionista[] = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() } as CuotaInversionista));
@@ -73,7 +73,7 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
     );
 
     const unsubPagos = onSnapshot(
-      query(collection(db, "pagos_inversionistas"), where("inversionContratoId", "==", contratoId)),
+      query(collection(db, "pagos_inversionistas"), where("empresaId", "==", userData.empresaId), where("inversionContratoId", "==", contratoId)),
       snap => {
         const list: PagoInversionista[] = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() } as PagoInversionista));
@@ -86,7 +86,7 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
       unsubCuotas();
       unsubPagos();
     };
-  }, [contratoId]);
+  }, [contratoId, userData?.empresaId]);
 
   if (loading) {
     return (

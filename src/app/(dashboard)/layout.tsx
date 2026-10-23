@@ -1,5 +1,6 @@
 "use client";
 
+import { canAccessPage } from "@/lib/permissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -15,7 +16,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, userData, loading } = useAuth();
+  const { user, userData, loading, error } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -40,12 +41,17 @@ export default function DashboardLayout({
     );
   }
 
+  if (!userData || error) return <main className="p-8 space-y-4"><p role="alert">{error || "No se pudo validar tu perfil."}</p><Button onClick={() => signOut(auth)}>Volver al inicio de sesión</Button></main>;
+
+  if (!canAccessPage(userData.rol, pathname)) return <main className="p-8">No tienes permiso para acceder a esta sección.</main>;
+
   const handleLogout = async () => {
     await signOut(auth);
     router.push("/login");
   };
 
   const navItems = [
+    { name: "Seguridad", href: "/seguridad", icon: Settings },
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Clientes", href: "/clientes", icon: Users },
     { name: "Préstamos", href: "/prestamos", icon: CreditCard },

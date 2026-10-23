@@ -1,3 +1,4 @@
+import { auth } from "./firebase";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { format } from "date-fns";
@@ -11,7 +12,9 @@ export const formatMoney = (amount: number, currency: string = "USD") => {
 };
 
 const getBase64ImageFromUrl = async (imageUrl: string) => {
-  const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`);
+  const token = await auth.currentUser?.getIdToken();
+  const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error("No se pudo cargar el logo.");
   const blob = await res.blob();
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();

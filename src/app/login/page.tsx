@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
+import { getMultiFactorResolver, TotpMultiFactorGenerator, type MultiFactorError, type MultiFactorResolver, sendPasswordResetEmail, signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -12,6 +13,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
 
 export default function LoginPage() {
+  const [resolver, setResolver] = useState<MultiFactorResolver | null>(null);
+  const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -39,10 +42,16 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      if (resolver) {
+        const factor = resolver.hints.find(h => h.factorId === TotpMultiFactorGenerator.FACTOR_ID);
+        if (!factor) throw new Error("No hay un autenticador compatible.");
+        await resolver.resolveSignIn(TotpMultiFactorGenerator.assertionForSignIn(factor.uid, otp));
+      } else await signInWithEmailAndPassword(auth, email, password);
       router.push("/dashboard");
-    } catch (err: any) {
-      setError("Credenciales incorrectas. Por favor, intenta de nuevo.");
+    } catch (err: unknown) {
+      if (err instanceof FirebaseError && err.code === "auth/multi-factor-auth-required") {
+        setResolver(getMultiFactorResolver(auth, err as MultiFactorError)); setPassword("");
+      } else setError(resolver ? "Código inválido o vencido. Revisa el autenticador o vuelve a iniciar sesión." : "No se pudo iniciar sesión. Revisa tus credenciales.");
     } finally {
       setIsLoading(false);
     }
@@ -59,6 +68,7 @@ export default function LoginPage() {
         </CardHeader>
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
+            {resolver && <div className="space-y-2"><Label htmlFor="login-otp">Código del autenticador</Label><Input id="login-otp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={otp} onChange={e => setOtp(e.target.value)} /><Button type="button" variant="outline" onClick={() => { setResolver(null); setOtp(""); setPassword(""); }}>Volver al inicio de sesión</Button></div>}
             {error && (
               <div className="p-3 text-sm text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-md">
                 {error}
@@ -72,7 +82,8 @@ export default function LoginPage() {
                 placeholder="nombre@ejemplo.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
+                required={!resolver}
+                disabled={!!resolver}
               />
             </div>
             <div className="space-y-2">
@@ -87,7 +98,8 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
+                required={!resolver}
+                disabled={!!resolver}
               />
             </div>
           </CardContent>

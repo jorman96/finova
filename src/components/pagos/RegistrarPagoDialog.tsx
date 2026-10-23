@@ -1,5 +1,6 @@
 "use client";
 
+import { auth } from "@/lib/firebase";
 import { useState, useEffect } from "react";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger 
@@ -165,7 +166,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
       // Trigger Email Silencioso
       fetch("/api/email/recibo", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await auth.currentUser?.getIdToken()}` },
         body: JSON.stringify({
           empresaId: userData.empresaId,
           clienteId: prestamo.clienteId,
@@ -175,7 +176,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
           fecha: new Date().toISOString(),
           reciboId: pagoRef.id
         })
-      }).catch(err => console.error("Error trigger email:", err));
+      }).then(res => { if (!res.ok) toast.warning("Pago guardado. El recibo por correo no pudo enviarse."); }).catch(() => toast.warning("Pago guardado. El recibo por correo no pudo enviarse."));
 
       toast.success("Pago registrado exitosamente");
       setOpen(false);

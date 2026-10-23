@@ -60,7 +60,7 @@ export default function ClientesPage() {
           <h2 className="text-3xl font-bold tracking-tight">Clientes</h2>
           <p className="text-muted-foreground">Gestiona la cartera de clientes y su historial.</p>
         </div>
-        {userData?.rol !== 'cobrador' && (
+        {userData && ['superadmin','dueño','admin','cajero'].includes(userData.rol) && (
           <NuevoClienteDialog />
         )}
       </div>
@@ -139,7 +139,7 @@ export default function ClientesPage() {
                         <DropdownMenuItem render={<Link href={`/clientes/${cliente.id}`} />}>
                           <Eye className="mr-2 h-4 w-4" /> Ver Perfil
                         </DropdownMenuItem>
-                        <EditarClienteDialog cliente={cliente} />
+                        {userData && ['superadmin','dueño','admin','cajero'].includes(userData.rol) && <EditarClienteDialog cliente={cliente} />}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>

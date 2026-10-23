@@ -13,7 +13,7 @@ export async function requireActor(request: Request, allowed: readonly Role[] = 
   const decoded = await adminAuth.verifyIdToken(token, true).catch(() => { throw new ApiError(401, "Sesión vencida o revocada."); });
   const snap = await adminDb.collection("usuarios").doc(decoded.uid).get();
   const user = snap.data();
-  if (!user || user.activo === false || !allowed.includes(user.rol)) throw new ApiError(403, "No tienes permiso para esta operación.");
+  if (!user || (user.activo !== undefined && user.activo !== true) || !allowed.includes(user.rol)) throw new ApiError(403, "No tienes permiso para esta operación.");
   if (user.rol !== "superadmin") {
     const empresa = await adminDb.collection("empresas").doc(user.empresaId).get();
     if (empresa.data()?.estado !== "activa") throw new ApiError(403, "Empresa suspendida o no disponible.");
@@ -26,6 +26,7 @@ export function assertTenant(actor: Actor, empresaId: unknown) {
 export function apiError(error: unknown) {
   if (error instanceof ApiError) return NextResponse.json({ error: error.message }, { status: error.status });
   if (error instanceof ZodError || error instanceof SyntaxError) return NextResponse.json({ error: "Datos inválidos. Revisa los campos enviados." }, { status: 400 });
-  console.error("Operación de servidor fallida", error instanceof Error ? error.message : "Error desconocido");
+  const reference = crypto.randomUUID();
+  console.error(JSON.stringify({ level: "error", event: "server_operation_failed", reference, errorType: error instanceof Error ? error.name : "unknown" }));
   return NextResponse.json({ error: "No se completó la operación. Intenta nuevamente." }, { status: 500 });
 }

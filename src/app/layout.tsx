@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import { PwaRegistration } from "@/components/PwaRegistration";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -19,8 +20,10 @@ export const metadata: Metadata = {
   title: "Finova - Sistema de Préstamos",
   description: "Gestión integral de préstamos personales y microcréditos",
   manifest: "/manifest.json",
-  themeColor: "#18181b",
+
 };
+
+export const viewport: Viewport = { themeColor: "#18181b" };
 
 export default function RootLayout({
   children,
@@ -44,6 +47,7 @@ export default function RootLayout({
             {children}
           </AuthProvider>
           <Toaster />
+          <PwaRegistration />
         </ThemeProvider>
       </body>
     </html>

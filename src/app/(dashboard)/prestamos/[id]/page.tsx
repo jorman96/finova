@@ -28,7 +28,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
   const router = useRouter();
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !userData?.empresaId) return;
 
     const unsubPrestamo = onSnapshot(doc(db, "prestamos", id), (docSnap) => {
       if (docSnap.exists()) {
@@ -38,11 +38,11 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
       }
     });
 
-    const unsubCuotas = onSnapshot(query(collection(db, "cuotas"), where("prestamoId", "==", id), orderBy("numeroCuota", "asc")), (snap) => {
-      setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)));
+    const unsubCuotas = onSnapshot(query(collection(db, "cuotas"), where("empresaId", "==", userData.empresaId), where("prestamoId", "==", id)), (snap) => {
+      setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)).sort((a,b) => a.numeroCuota - b.numeroCuota));
     });
 
-    const unsubPagos = onSnapshot(query(collection(db, "pagos"), where("prestamoId", "==", id)), (snap) => {
+    const unsubPagos = onSnapshot(query(collection(db, "pagos"), where("empresaId", "==", userData!.empresaId), where("prestamoId", "==", id)), (snap) => {
       const pagosData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       pagosData.sort((a: any, b: any) => {
         const dateA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha || 0);
@@ -61,103 +61,14 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
       unsubCuotas();
       unsubPagos();
     };
-  }, [id, router]);
+  }, [id, router, userData?.empresaId]);
 
   const fetchData = () => {
     // Ya no es necesario, pero mantenemos la función para no romper props
   };
 
-  const handleDeletePrestamo = async () => {
-    if (!prestamo) return;
-    setIsDeleting(true);
-    try {
-      const batch = writeBatch(db);
-
-      // Eliminar Cuotas
-      const cuotasSnap = await getDocs(query(collection(db, "cuotas"), where("prestamoId", "==", id)));
-      cuotasSnap.forEach(docSnap => batch.delete(docSnap.ref));
-
-      // Eliminar Pagos
-      const pagosSnap = await getDocs(query(collection(db, "pagos"), where("prestamoId", "==", id)));
-      pagosSnap.forEach(docSnap => batch.delete(docSnap.ref));
-
-      // Eliminar Préstamo
-      batch.delete(doc(db, "prestamos", id));
-
-      await batch.commit();
-      toast.success("Préstamo eliminado exitosamente.");
-      setDeleteModalOpen(false);
-      router.push("/prestamos");
-    } catch (error) {
-      console.error("Error eliminando préstamo:", error);
-      toast.error("Error al eliminar el crédito.");
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleDeletePago = async (pago: any) => {
-    if(!confirm("¿Estás seguro de que deseas eliminar este pago y revertir el saldo? Esta acción no se puede deshacer.")) return;
-    try {
-      const batch = writeBatch(db);
-      
-      // 1. Revertir Cuotas
-      if (pago.cuotasAplicadas && pago.cuotasAplicadas.length > 0) {
-         for (const ca of pago.cuotasAplicadas) {
-            const currentCuota = cuotas.find(c => c.id === ca.cuotaId);
-            if(currentCuota) {
-               const nuevoPagado = Math.max(0, currentCuota.montoPagado - ca.montoAbonado);
-               const nuevoEstado = nuevoPagado >= currentCuota.totalCuota ? 'pagada' : 
-                                  (nuevoPagado > 0 ? 'parcial' : (new Date(currentCuota.fechaVencimiento) < new Date() ? 'vencida' : 'pendiente'));
-               batch.update(doc(db, "cuotas", ca.cuotaId), {
-                  montoPagado: nuevoPagado,
-                  estado: nuevoEstado
-               });
-            }
-         }
-      } else {
-         let montoARevertir = pago.monto;
-         const cuotasReversa = [...cuotas].sort((a,b) => b.numeroCuota - a.numeroCuota);
-         for (const c of cuotasReversa) {
-            if (montoARevertir <= 0) break;
-            if (c.montoPagado > 0) {
-               const aRevertir = Math.min(c.montoPagado, montoARevertir);
-               const nuevoPagado = c.montoPagado - aRevertir;
-               const nuevoEstado = nuevoPagado >= c.totalCuota ? 'pagada' : 
-                                  (nuevoPagado > 0 ? 'parcial' : (new Date(c.fechaVencimiento) < new Date() ? 'vencida' : 'pendiente'));
-               batch.update(doc(db, "cuotas", c.id), {
-                 montoPagado: nuevoPagado,
-                 estado: nuevoEstado
-               });
-               montoARevertir -= aRevertir;
-            }
-         }
-      }
-
-      // 2. Revertir Préstamo
-      const nuevoSaldoRestante = prestamo!.saldoRestante + pago.monto;
-      let nuevoEstadoPrestamo = prestamo!.estado;
-      if(prestamo!.estado === 'completado') {
-         const tieneVencidas = cuotas.some(c => new Date(c.fechaVencimiento) < new Date() && c.montoPagado < c.totalCuota);
-         nuevoEstadoPrestamo = tieneVencidas ? 'moroso' : 'activo';
-      }
-      batch.update(doc(db, "prestamos", prestamo!.id), {
-         saldoRestante: nuevoSaldoRestante,
-         estado: nuevoEstadoPrestamo
-      });
-
-      // 3. Eliminar Pago
-      batch.delete(doc(db, "pagos", pago.id));
-
-      await batch.commit();
-      toast.success("Pago eliminado y saldos revertidos correctamente.");
-      fetchData();
-    } catch(e) {
-      console.error(e);
-      toast.error("Error al revertir el pago.");
-    }
-  };
-
+  const handleDeletePrestamo = async () => { toast.info("El historial financiero está protegido. Los créditos no se borran."); };
+  const handleDeletePago = async (_pago: unknown) => { toast.info("Los reversos requieren revisión del historial. No se borran pagos."); };
 
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando detalles del préstamo...</div>;
@@ -224,7 +135,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             <RegistrarPagoDialog prestamo={prestamo} cuotas={cuotas} onPagoRegistrado={fetchData} />
           )}
           {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
-            <Button variant="destructive" onClick={() => setDeleteModalOpen(true)}>
+            <Button variant="outline" disabled title="El historial financiero está protegido" onClick={() => setDeleteModalOpen(true)}>
               <Trash2 className="mr-2 h-4 w-4" /> Eliminar Crédito
             </Button>
           )}
@@ -359,7 +270,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
                           <FileText className="h-4 w-4 mr-2" /> Recibo
                         </Button>
                         {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
-                          <Button size="sm" variant="destructive" onClick={() => handleDeletePago(p)}>
+                          <Button size="sm" variant="outline" disabled title="Los reversos requieren conciliación del historial" onClick={() => handleDeletePago(p)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         )}

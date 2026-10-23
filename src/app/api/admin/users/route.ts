@@ -1,72 +1,29 @@
-import { NextResponse } from 'next/server';
-import { adminAuth, adminDb } from '@/lib/firebase-admin';
-
+import { adminAuth,adminDb } from "@/lib/firebase-admin";
+import { canAssignRole,roles } from "@/lib/permissions";
+import { rateLimit } from "@/lib/rate-limit";
+import { ApiError,apiError,requireActor } from "@/lib/server-auth";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+const schema = z.object({
+  email: z.email(), password: z.string().min(12).max(128), nombre: z.string().trim().min(2).max(100),
+  documento: z.string().max(40).optional(), telefono: z.string().max(30).optional(),
+  empresaId: z.string().min(1).max(120).regex(/^[\w-]+$/), rol: z.enum(roles).default("cajero"),
+});
 export async function POST(request: Request) {
   try {
-    // 1. Verify Authentication of the caller (Super Admin check)
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'No autorizado.' }, { status: 401 });
-    }
-    const token = authHeader.split('Bearer ')[1];
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    
-    // Check if the caller is superadmin by checking Firestore (or custom claims)
-    const callerDoc = await adminDb.collection('usuarios').doc(decodedToken.uid).get();
-    const callerData = callerDoc.data();
-    const { email, password, nombre, documento, telefono, empresaId, rol } = await request.json();
-
-    if (!callerDoc.exists) {
-      return NextResponse.json({ error: 'Permisos insuficientes.' }, { status: 403 });
-    }
-
-    const isSuperAdmin = callerData?.rol === 'superadmin';
-    const isDueño = callerData?.rol === 'dueño';
-
-    if (!isSuperAdmin && !isDueño) {
-      return NextResponse.json({ error: 'Permisos insuficientes.' }, { status: 403 });
-    }
-
-    if (isDueño && callerData?.empresaId !== empresaId) {
-      return NextResponse.json({ error: 'No puedes crear usuarios para otra empresa.' }, { status: 403 });
-    }
-
-    if (!email || !password || !empresaId) {
-      return NextResponse.json({ error: 'Faltan datos requeridos (email, password, empresaId).' }, { status: 400 });
-    }
-
-    // 3. Verify if empresa exists and is active
-    const empresaDoc = await adminDb.collection('empresas').doc(empresaId).get();
-    if (!empresaDoc.exists) {
-       return NextResponse.json({ error: 'La empresa especificada no existe.' }, { status: 404 });
-    }
-
-    // 4. Create User in Firebase Auth
-    const userRecord = await adminAuth.createUser({
-      email,
-      password,
-      displayName: nombre,
-    });
-
-    // 5. Save user profile in Firestore
-    await adminDb.collection('usuarios').doc(userRecord.uid).set({
-      email,
-      nombre,
-      documento: documento || '',
-      telefono: telefono || '',
-      empresaId,
-      rol: rol || 'dueño',
-      createdAt: new Date()
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Usuario creado exitosamente', 
-      uid: userRecord.uid 
-    });
-
-  } catch (error: any) {
-    console.error('Error creating user:', error);
-    return NextResponse.json({ error: error.message || 'Error interno del servidor.' }, { status: 500 });
-  }
+    const actor = await requireActor(request, ["superadmin", "dueño"]);
+    await rateLimit("users:" + actor.uid, 20, 60_000);
+    const data = schema.parse(await request.json());
+    if (!canAssignRole(actor.rol, data.rol) || (actor.rol !== "superadmin" && actor.empresaId !== data.empresaId)) throw new ApiError(403, "No puedes asignar este rol o empresa.");
+    const empresa = await adminDb.collection("empresas").doc(data.empresaId).get();
+    if (empresa.data()?.estado !== "activa") throw new ApiError(403, "La empresa no está activa.");
+    const user = await adminAuth.createUser({ email: data.email, password: data.password, displayName: data.nombre });
+    try {
+      const batch = adminDb.batch();
+      batch.set(adminDb.collection("usuarios").doc(user.uid), { uid: user.uid, nombre: data.nombre, email: data.email, documento: data.documento || "", telefono: data.telefono || "", empresaId: data.empresaId, rol: data.rol, activo: true, createdAt: new Date() });
+      batch.set(adminDb.collection("auditoria").doc(), { empresaId: data.empresaId, accion: "crear_usuario", usuarioId: actor.uid, destinoId: user.uid, rol: data.rol, fecha: new Date() });
+      await batch.commit();
+    } catch (error) { await adminAuth.deleteUser(user.uid); throw error; }
+    return NextResponse.json({ success: true, uid: user.uid });
+  } catch (error) { return apiError(error); }
 }

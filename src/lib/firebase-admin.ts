@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 
 if (!admin.apps.length) {
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  if (process.env.VERCEL_ENV === "preview" && projectId === "finova-3b91d") throw new Error("Preview requiere un proyecto Firebase aislado.");
   const emulator = !!process.env.FIRESTORE_EMULATOR_HOST;
   if (emulator && !projectId?.startsWith("demo-")) throw new Error("Los emuladores de verificación requieren un proyecto demo.");
   const email = process.env.FIREBASE_CLIENT_EMAIL;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState, use } from "react";
 import { doc, onSnapshot, updateDoc, arrayUnion, query, collection, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -18,6 +19,7 @@ import { ScoreGauge } from "@/components/clientes/ScoreGauge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 
 export default function ClienteDetallePage({ params }: { params: Promise<{ id: string }> }) {
+  const { userData } = useAuth();
   const resolvedParams = use(params);
   const { id } = resolvedParams;
   const [cliente, setCliente] = useState<Cliente | null>(null);
@@ -40,6 +42,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
   };
 
   useEffect(() => {
+    if (!userData?.empresaId) return;
     const docRef = doc(db, "clientes", id);
     const unsubscribeCliente = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -53,7 +56,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
       setLoading(false);
     });
 
-    const qPrestamos = query(collection(db, "prestamos"), where("clienteId", "==", id));
+    const qPrestamos = query(collection(db, "prestamos"), where("empresaId", "==", userData.empresaId), where("clienteId", "==", id));
     const unsubscribePrestamos = onSnapshot(qPrestamos, (snap) => {
       setPrestamos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
@@ -62,7 +65,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
       unsubscribeCliente();
       unsubscribePrestamos();
     };
-  }, [id, router]);
+  }, [id, router, userData?.empresaId]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

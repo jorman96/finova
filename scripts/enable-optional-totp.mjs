@@ -1,0 +1,13 @@
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { writeFile } from 'node:fs/promises';
+process.loadEnvFile('.env.local');
+const project = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+if (process.argv[2] !== '--project' || process.argv[3] !== project || process.argv[4] !== '--enable-optional-totp') throw Error('Explicit project and optional TOTP flag required.');
+initializeApp({ projectId: project, credential: cert({ projectId: project, clientEmail: process.env.FIREBASE_CLIENT_EMAIL, privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') }) });
+const manager = getAuth().projectConfigManager(), before = await manager.getProjectConfig();
+await writeFile('.private-backups/mfa-before.json', JSON.stringify(before.multiFactorConfig || null), { flag: 'wx', mode: 0o600 });
+const existing = before.multiFactorConfig || { state: 'DISABLED' };
+const others = (existing.providerConfigs || []).filter(p => !p.totpProviderConfig);
+const updated = await manager.updateProjectConfig({ multiFactorConfig: { ...existing, state: 'ENABLED', providerConfigs: [...others, { state: 'ENABLED', totpProviderConfig: { adjacentIntervals: 1 } }] } });
+console.log(JSON.stringify({ project, totpAvailable: updated.multiFactorConfig?.providerConfigs?.some(p => p.state === 'ENABLED' && p.totpProviderConfig), forcedEnrollment: false, accountModifications: 0 }));

@@ -1,5 +1,6 @@
 "use client";
 
+import { auth } from "@/lib/firebase";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Mail, Loader2 } from "lucide-react";
@@ -49,7 +50,7 @@ export function NotificarMorososButton() {
         try {
           const res = await fetch("/api/email/cobranza", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${await auth.currentUser?.getIdToken()}` },
             body: JSON.stringify({
               empresaId: userData.empresaId,
               clienteId: cuota.clienteId,

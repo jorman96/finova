@@ -1,3 +1,4 @@
+import { randomBytes, createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import assert from 'node:assert/strict';
@@ -29,5 +30,20 @@ try{
  assert.equal((await db.collection('clientes').doc('free').get()).exists,false);
  assert.equal((await db.collection('auditoria').where('accion','==','eliminar_cliente').get()).size,1);
  await status('repeat deletion handled',{clienteId:'free'},owner,404);
+ async function api(path,body,token){return fetch('http://127.0.0.1:3110'+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)});}
+ assert.equal((await api('/api/admin/users',{email:'bad@example.test',password:'LongPassword123!',nombre:'Test',empresaId:'a',rol:'superadmin'},owner)).status,403);count++;console.log('PASS owner cannot create platform administrators');
+ assert.equal((await api('/api/admin/users',{email:'cashier-action@example.test',password:'LongPassword123!',nombre:'Test',empresaId:'a',rol:'cajero'},cashier)).status,403);count++;console.log('PASS cashier cannot create accounts');
+ for(const path of ['/api/admin/backup','/api/security/status','/api/security/events','/api/email/recibo','/api/email/cobranza']){assert.equal((await api(path,{})).status,401);count++;}console.log('PASS sensitive endpoints require authentication');
+ assert.equal((await api('/api/admin/backup',{},cashier)).status,403);count++;
+ const backup=await api('/api/admin/backup',{},owner);assert.equal(backup.status,200);assert.equal((await backup.json()).empresaId,'a');count++;
+ const profile=(await db.collection('usuarios').doc('legacyOwner').get()).data();assert.equal(profile.rol,'dueño');assert.equal(profile.empresaId,'a');assert.equal('activo' in profile,false);count++;console.log('PASS legacy owner retains unchanged profile and backup access');
+ await db.collection('clientes').doc('portalClient').set({empresaId:'a',nombres:'Portal Demo',apellidos:'Prueba',cedula:'1234567890',correo:'portal@example.test',estado:'nuevo'});
+ const portalUrl='http://127.0.0.1:3110/portal/a/cliente/portalClient';
+ assert.equal((await fetch(portalUrl,{redirect:'manual'})).status,307);count++;
+ const challenge=randomBytes(32).toString('hex'),code='123456';await db.collection('portal_challenges').doc(challenge).set({hash:createHash('sha256').update(challenge+code).digest('hex'),clienteId:'portalClient',empresaId:'a',attempts:0,used:false,expiresAt:new Date(Date.now()+600000)});
+ const login=await api('/api/portal/login',{action:'verify',challenge,code});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];assert.ok(login.headers.get('set-cookie').includes('HttpOnly'));count++;
+ assert.equal((await fetch(portalUrl,{headers:{cookie}})).status,200);count++;
+ assert.equal((await api('/api/portal/login',{action:'verify',challenge,code})).status,401);count++;
+ const logout=await fetch('http://127.0.0.1:3110/api/portal/logout',{method:'POST',headers:{cookie}});assert.equal(logout.status,200);assert.equal((await fetch(portalUrl,{headers:{cookie},redirect:'manual'})).status,307);count++;console.log('PASS portal requires a one-time code, secure session and real logout');
  console.log('Completed '+count+' client deletion checks.');
 }catch(e){console.error(e);console.error(logs);process.exitCode=1;}finally{child.kill();await db.terminate();}

@@ -699,18 +699,18 @@ export default function ConfiguracionPage() {
             </CardContent>
           </Card>
 
-          {/* Zona de Peligro: Reinicio de Valores Financieros */}
+          {/* Conservación del historial: Reinicio de Valores Financieros */}
           {(userData?.rol === 'dueño' || userData?.rol === 'superadmin') && (
             <Card className="max-w-2xl border-destructive/40 shadow-xs">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2 text-destructive">
                   <AlertTriangle className="h-5 w-5" />
                   <CardTitle className="text-base font-bold text-destructive">
-                    Zona de Peligro: Reiniciar Valores Financieros
+                    Conservación del historial y respaldos
                   </CardTitle>
                 </div>
                 <CardDescription>
-                  Restaura todos los saldos, préstamos, cuotas y cobros a $0.00 para empezar en limpio. Tu lista de clientes y usuarios no se tocarán.
+                  Conserva el historial financiero y descarga los registros de tu empresa. Los saldos y los usuarios existentes no se reinician.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -822,8 +822,8 @@ function EquipoTab() {
                 <Input type="email" required value={nuevo.email} onChange={e => setNuevo({...nuevo, email: e.target.value})} />
               </div>
               <div className="space-y-2">
-                <Label>Contraseña</Label>
-                <Input type="password" required value={nuevo.password} onChange={e => setNuevo({...nuevo, password: e.target.value})} />
+                <Label>Contraseña nueva (mínimo 12 caracteres)</Label>
+                <Input type="password" minLength={12} autoComplete="new-password" required value={nuevo.password} onChange={e => setNuevo({...nuevo, password: e.target.value})} />
               </div>
               <div className="space-y-2">
                 <Label>Rol del Sistema</Label>

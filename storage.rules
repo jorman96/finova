@@ -1,20 +1,21 @@
 rules_version = '2';
 service firebase.storage {
-  match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null;
-    }
-    match /clientes/{clienteId}/documentos/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null 
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*|application/pdf');
-    }
-    match /pagos/{pagoId}/comprobantes/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null 
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*|application/pdf');
-    }
+ match /b/{bucket}/o {
+  function profile() { return firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data; }
+  function tenant(id) { return request.auth != null && profile().get('activo', true) == true && profile().empresaId == id && firestore.get(/databases/(default)/documents/empresas/$(id)).data.estado == 'activa'; }
+  function validFile() { return request.resource.size <= 5 * 1024 * 1024 && request.resource.contentType in ['image/jpeg','image/png','image/webp','application/pdf']; }
+  match /empresas/{empresaId}/{path=**} {
+   allow read: if tenant(empresaId);
+   allow create: if tenant(empresaId) && profile().rol in ['superadmin','dueño','admin','cajero','cobrador'] && validFile();
+   allow update, delete: if false;
   }
+  match /clientes/{id}/{path=**} {
+   allow read: if tenant(firestore.get(/databases/(default)/documents/clientes/$(id)).data.empresaId);
+   allow write: if false;
+  }
+  match /pagos/{id}/{path=**} {
+   allow read: if tenant(firestore.get(/databases/(default)/documents/pagos/$(id)).data.empresaId);
+   allow write: if false;
+  }
+ }
 }

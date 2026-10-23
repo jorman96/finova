@@ -1,6 +1,8 @@
+import Image from "next/image";
 import { adminDb } from "@/lib/firebase-admin";
-import { PortalLoginForm } from "./PortalLoginForm";
+import type { DocumentData } from "firebase/firestore";
 import { notFound } from "next/navigation";
+import { PortalLoginForm } from "./PortalLoginForm";
 
 export default async function PortalPage({ params }: { params: Promise<{ empresaId: string }> }) {
   const resolvedParams = await params;
@@ -12,7 +14,7 @@ export default async function PortalPage({ params }: { params: Promise<{ empresa
     notFound();
   }
 
-  const empresaData = empresaSnap.data() as any;
+  const empresaData = empresaSnap.data() as DocumentData;
 
   if (empresaData.estado !== 'activa') {
     return (
@@ -30,7 +32,7 @@ export default async function PortalPage({ params }: { params: Promise<{ empresa
       <div className="w-full max-w-md bg-card rounded-2xl shadow-xl overflow-hidden border">
         <div className="p-8 text-center bg-muted/30 border-b">
           {empresaData.logoUrl ? (
-            <img src={empresaData.logoUrl} alt={empresaData.nombre} className="h-20 object-contain mx-auto mb-4" />
+            <Image width={160} height={80} unoptimized src={empresaData.logoUrl} alt={empresaData.nombre} className="h-20 object-contain mx-auto mb-4" />
           ) : (
             <div className="h-20 w-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl font-bold text-primary">{empresaData.nombre.charAt(0)}</span>

@@ -1,48 +1,56 @@
-import { adminDb } from "@/lib/firebase-admin";
-import { notFound, redirect } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import Image from "next/image";
 import { ScoreGauge } from "@/components/clientes/ScoreGauge";
+import { PortalLogout } from "@/components/PortalLogout";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from "@/components/ui/card";
+import { businessDate,isOverdue } from "@/lib/business-date";
+import { adminDb } from "@/lib/firebase-admin";
+import { hasPortalSession } from "@/lib/portal-session";
+import { format,parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { LogOut, Calendar, DollarSign, AlertCircle, CheckCircle, Percent, Clock, Target, Banknote } from "lucide-react";
-import Link from "next/link";
+import type { DocumentData } from "firebase/firestore";
+import { AlertCircle,Banknote,Calendar,CheckCircle,Clock,Percent,Target } from "lucide-react";
+import { notFound,redirect } from "next/navigation";
 
 export default async function PortalClienteDashboard({ params }: { params: Promise<{ empresaId: string, clienteId: string }> }) {
   const resolvedParams = await params;
   const { empresaId, clienteId } = resolvedParams;
+
+  if (!await hasPortalSession(empresaId, clienteId)) redirect(`/portal/${empresaId}`);
 
   // Fetch Empresa
   const empresaSnap = await adminDb.collection("empresas").doc(empresaId).get();
   if (!empresaSnap.exists || empresaSnap.data()?.estado !== 'activa') {
     notFound();
   }
-  const empresa = empresaSnap.data() as any;
+  const empresa = empresaSnap.data() as DocumentData;
 
   // Fetch Cliente
   const clienteSnap = await adminDb.collection("clientes").doc(clienteId).get();
   if (!clienteSnap.exists || clienteSnap.data()?.empresaId !== empresaId) {
     redirect(`/portal/${empresaId}`);
   }
-  const cliente = clienteSnap.data() as any;
+  const cliente = clienteSnap.data() as DocumentData;
 
   // Fetch Todos los Préstamos
   const todosPrestamosSnap = await adminDb.collection("prestamos")
+    .where("empresaId", "==", empresaId)
     .where("clienteId", "==", clienteId)
     .get();
   
   const todosPrestamos = todosPrestamosSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   
-  const prestamosActivos = todosPrestamos.filter((p: any) => p.estado === 'activo' || p.estado === 'moroso');
-  const prestamosPasados = todosPrestamos.filter((p: any) => p.estado === 'completado' || p.estado === 'cancelado');
+  const prestamosActivos = todosPrestamos.filter((p: DocumentData) => p.estado === 'activo' || p.estado === 'moroso');
+  const prestamosPasados = todosPrestamos.filter((p: DocumentData) => p.estado === 'completado' || p.estado === 'cancelado');
 
   // Para cada préstamo activo, buscar la próxima cuota pendiente
-  const prestamosConCuotas = await Promise.all(prestamosActivos.map(async (p: any) => {
+  const prestamosConCuotas = await Promise.all(prestamosActivos.map(async (p: DocumentData) => {
     const cuotasSnap = await adminDb.collection("cuotas")
+      .where("empresaId", "==", empresaId)
       .where("prestamoId", "==", p.id)
       .get();
     
-    const cuotasList = cuotasSnap.docs.map(d => d.data());
+    const cuotasList = cuotasSnap.docs.map(d => { const c = d.data(); return { ...c, numeroCuota: c.numeroCuota, estado: isOverdue(c as { fechaVencimiento: string; totalCuota: number; montoPagado?: number }, businessDate(new Date(), empresa.zonaHoraria)) ? "vencida" : c.estado }; });
     const cuotasPendientes = cuotasList.filter(c => ["pendiente", "vencida", "parcial"].includes(c.estado));
     cuotasPendientes.sort((a, b) => a.numeroCuota - b.numeroCuota);
     
@@ -63,19 +71,16 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {empresa.logoUrl ? (
-              <img src={empresa.logoUrl} alt="Logo" className="h-8 object-contain" />
+              <Image width={160} height={80} unoptimized src={empresa.logoUrl} alt="Logo" className="h-8 object-contain" />
             ) : (
               <div className="h-8 w-8 bg-primary/10 rounded-full flex items-center justify-center">
-                <span className="font-bold text-primary">{empresa.nombre.charAt(0)}</span>
+                <span className="font-bold text-primary">{String(empresa.nombre || "Finova").charAt(0)}</span>
               </div>
             )}
             <span className="font-bold text-lg hidden sm:block">{empresa.nombre}</span>
           </div>
           
-          <Link href={`/portal/${empresaId}`} className="text-sm font-medium text-muted-foreground hover:text-foreground flex items-center gap-2">
-            <LogOut className="h-4 w-4" />
-            Salir
-          </Link>
+          <PortalLogout empresaId={empresaId} />
         </div>
       </header>
 
@@ -96,7 +101,7 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                 <div className="bg-background rounded-lg p-4 border shadow-sm">
                   <p className="text-sm text-muted-foreground mb-1">Saldo Total Pendiente</p>
                   <p className="text-3xl font-bold text-primary">
-                    {formatMoney(prestamosActivos.reduce((acc, p: any) => acc + (p.saldoRestante || 0), 0))}
+                    {formatMoney(prestamosActivos.reduce((acc, p: DocumentData) => acc + (p.saldoRestante || 0), 0))}
                   </p>
                 </div>
               </div>
@@ -105,10 +110,10 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
 
           <Card className="shadow-md flex flex-col items-center justify-center py-6">
             <CardHeader className="pb-2 text-center w-full">
-              <CardTitle className="text-lg">Tu Score Crediticio</CardTitle>
+              <CardTitle className="text-lg">Indicador interno de pago</CardTitle>
             </CardHeader>
             <CardContent className="pb-0">
-              <ScoreGauge score={cliente.score || 50} />
+              <ScoreGauge score={cliente.score ?? 50} />
             </CardContent>
           </Card>
         </div>
@@ -126,7 +131,7 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {prestamosConCuotas.map((p: any) => {
+            {prestamosConCuotas.map((p: DocumentData) => {
               const montoFinanciado = p.totalPagar || p.montoOriginal || p.monto;
               const montoPagado = montoFinanciado - (p.saldoRestante || 0);
               const porcentajeProgreso = montoFinanciado > 0 ? Math.min(100, Math.max(0, (montoPagado / montoFinanciado) * 100)) : 0;
@@ -137,7 +142,7 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle className="text-lg">Crédito {formatMoney(p.monto)}</CardTitle>
-                      <CardDescription>Otorgado el {p.fechaDesembolso ? format(new Date(p.fechaDesembolso), "dd MMM yyyy", { locale: es }) : format(new Date(p.createdAt?.toDate?.() || new Date()), "dd MMM yyyy", { locale: es })}</CardDescription>
+                      <CardDescription>Otorgado el {p.fechaDesembolso ? format(parseISO(p.fechaDesembolso), "dd MMM yyyy", { locale: es }) : format(new Date(p.createdAt?.toDate?.() || new Date()), "dd MMM yyyy", { locale: es })}</CardDescription>
                     </div>
                     <Badge variant={p.estado === 'moroso' ? 'destructive' : 'default'}>{p.estado.toUpperCase()}</Badge>
                   </div>
@@ -193,11 +198,11 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                         <div className="flex justify-between items-end">
                           <div>
                             <p className="text-xs opacity-80">Fecha límite</p>
-                            <p className="font-medium">{format(new Date(p.proximaCuota.fechaVencimiento), "dd/MM/yyyy")}</p>
+                            <p className="font-medium">{format(parseISO(p.proximaCuota.fechaVencimiento), "dd/MM/yyyy")}</p>
                           </div>
                           <div className="text-right">
                             <p className="text-xs opacity-80">Monto a pagar</p>
-                            <p className="text-lg font-bold">${(p.proximaCuota.totalCuota - (p.proximaCuota.montoPagado || 0)).toFixed(2)}</p>
+                            <p className="text-lg font-bold">{formatMoney(p.proximaCuota.totalCuota - (p.proximaCuota.montoPagado || 0))}</p>
                           </div>
                         </div>
                       </div>
@@ -220,7 +225,7 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
           <>
             <h3 className="text-xl font-bold mt-8 mb-4">Historial de Préstamos Pagados</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {prestamosPasados.map((p: any) => (
+              {prestamosPasados.map((p: DocumentData) => (
                 <Card key={p.id} className="shadow-sm border-l-4 border-l-muted bg-muted/20 opacity-80">
                   <CardHeader className="pb-2">
                     <div className="flex justify-between items-start">

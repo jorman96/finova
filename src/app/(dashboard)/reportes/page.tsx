@@ -16,7 +16,7 @@ const formatMoney = (amount: number) => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 };
 
-import * as XLSX from "xlsx";
+import { appendRows, downloadWorkbook } from "@/lib/excel-export";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { startOfMonth, endOfMonth, format } from "date-fns";
@@ -104,7 +104,8 @@ export default function ReportesPage() {
     try {
       setIsGeneratingExcel(true);
       const data = await fetchReportData();
-      const wb = XLSX.utils.book_new();
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
 
       // Hoja de Resumen
       if (incluirResumen) {
@@ -121,8 +122,7 @@ export default function ReportesPage() {
           ["Total Ingresos por Cobros (Periodo)", totalCobrado],
           ["Total Cartera en Mora (Al día de hoy)", totalEnMora]
         ];
-        const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
-        XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen General");
+        wb.addWorksheet("Resumen General").addRows(resumenData);
       }
 
       // Hoja de Préstamos
@@ -138,8 +138,7 @@ export default function ReportesPage() {
           "Saldo Restante": p.saldoRestante,
           "Frecuencia": p.frecuenciaPago
         }));
-        const wsPrestamos = XLSX.utils.json_to_sheet(prestamosData);
-        XLSX.utils.book_append_sheet(wb, wsPrestamos, "Préstamos");
+        appendRows(wb, "Préstamos", prestamosData);
       }
 
       // Hoja de Cobros
@@ -153,8 +152,7 @@ export default function ReportesPage() {
           "Cuenta Destino": p.cuentaDestino || "N/A",
           "Registrado Por": p.usuarioNombre || "Sistema"
         }));
-        const wsCobros = XLSX.utils.json_to_sheet(cobrosData);
-        XLSX.utils.book_append_sheet(wb, wsCobros, "Cobros del Periodo");
+        appendRows(wb, "Cobros del Periodo", cobrosData);
       }
 
       // Hoja de Mora
@@ -168,11 +166,10 @@ export default function ReportesPage() {
           "Monto Pagado": m.montoPagado,
           "Deuda Pendiente": m.totalCuota - m.montoPagado
         }));
-        const wsMora = XLSX.utils.json_to_sheet(moraData);
-        XLSX.utils.book_append_sheet(wb, wsMora, "Cartera en Mora");
+        appendRows(wb, "Cartera en Mora", moraData);
       }
 
-      XLSX.writeFile(wb, `Reporte_Finova_${format(new Date(), "yyyyMMdd")}.xlsx`);
+      await downloadWorkbook(wb, `Reporte_Finova_${format(new Date(), "yyyyMMdd")}.xlsx`);
       toast.success("Excel generado correctamente");
     } catch (e) {
       console.error(e);

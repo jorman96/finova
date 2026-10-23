@@ -163,6 +163,8 @@ export function NuevoPrestamoDialog() {
     }
   };
 
+  if (!userData || !["superadmin", "dueño", "admin"].includes(userData.rol)) return null;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button />}>
