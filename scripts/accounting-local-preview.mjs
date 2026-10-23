@@ -7,7 +7,8 @@ initializeApp({ projectId: 'demo-finova' });
 const db = getFirestore(), auth = getAuth();
 await auth.createUser({ uid: 'accounting-preview-owner', email: 'contabilidad@example.test', password: 'DemoLocal2026!' });
 await Promise.all([
-  db.doc('usuarios/accounting-preview-owner').set({ nombre: 'Operador de prueba', rol: 'dueño', empresaId: 'accounting-demo' }),
+  db.doc('usuarios/accounting-preview-owner').set({ nombre: 'Operador de prueba', rol: process.argv.includes('--platform') ? 'superadmin' : 'dueño', empresaId: 'accounting-demo' }),
+  db.doc('empresas/access-preview').set({ nombre: 'Financiera de demostración', estado: 'activa', moneda: 'USD', plan: 'basico' }),
   db.doc('empresas/accounting-demo').set({ nombre: 'Financiera de prueba', estado: 'activa', moneda: 'USD' }),
   db.doc('clientes/demo-client').set({ empresaId: 'accounting-demo', nombres: 'Persona', apellidos: 'Ficticia' }),
   db.doc('prestamos/demo-reconciled').set({ empresaId: 'accounting-demo', fechaDesembolso: '2026-05-30', totalPagar: 110, saldoRestante: 100 }),

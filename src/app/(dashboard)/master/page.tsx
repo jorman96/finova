@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { collection, query, getDocs, addDoc, serverTimestamp, doc, updateDoc, getCountFromServer, where } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,11 +11,13 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Building2, Loader2, Users, ShieldAlert, CheckCircle2, UserPlus, CreditCard, Activity, PauseCircle, Eye, Search, PlusCircle, DollarSign } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+
+import { UserAccessDialog } from "@/components/configuracion/UserAccessDialog";
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444', '#f59e0b']; // emerald, blue, red, amber
 
@@ -54,8 +56,6 @@ export default function MasterPanelPage() {
   const [creando, setCreando] = useState(false);
 
   const [selectedEmpresaId, setSelectedEmpresaId] = useState("");
-  const [newUser, setNewUser] = useState({ nombre: "", email: "", password: "", documento: "", telefono: "" });
-  const [creatingUser, setCreatingUser] = useState(false);
 
   const [selectedEmpresaDetails, setSelectedEmpresaDetails] = useState<any>(null);
   const [savingDetails, setSavingDetails] = useState(false);
@@ -194,31 +194,6 @@ export default function MasterPanelPage() {
       loadData();
     } catch (error) {
       toast.error("Error al actualizar el estado.");
-    }
-  };
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreatingUser(true);
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ...newUser, empresaId: selectedEmpresaId, rol: "dueño" })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error creando usuario");
-
-      toast.success("Usuario administrador creado.");
-      setOpenUserModal(false);
-      setNewUser({ nombre: "", email: "", password: "", documento: "", telefono: "" });
-      loadData();
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
-      setCreatingUser(false);
     }
   };
 
@@ -411,7 +386,7 @@ export default function MasterPanelPage() {
                   <Button onClick={() => setOpenCreateEmpresa(true)}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Nuevo Inquilino
                   </Button>
-                  <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+                  <DialogContent className="max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] overflow-y-auto sm:max-w-2xl">
                     <DialogHeader>
                       <DialogTitle>Registrar Nueva Financiera</DialogTitle>
                       <DialogDescription>Crea un nuevo espacio de trabajo aislado en el sistema.</DialogDescription>
@@ -499,11 +474,9 @@ export default function MasterPanelPage() {
                         <Button variant="secondary" size="sm" onClick={() => { setSelectedEmpresaDetails(emp); setOpenDetailsModal(true); }}>
                           <Eye className="mr-2 h-4 w-4" /> Detalles
                         </Button>
-                        {!emp.dueno && (
-                          <Button variant="outline" size="sm" onClick={() => { setSelectedEmpresaId(emp.id); setOpenUserModal(true); }}>
-                            <UserPlus className="mr-2 h-4 w-4" /> Dueño
+                          <Button variant="outline" size="sm" disabled={emp.estado !== 'activa'} title={emp.estado !== 'activa' ? 'Activa la financiera para crear accesos.' : 'Crear una cuenta de dueño o administrador.'} onClick={() => { setSelectedEmpresaId(emp.id); setOpenUserModal(true); }}>
+                            <UserPlus className="mr-2 h-4 w-4" /> Crear acceso
                           </Button>
-                        )}
                         <Button variant={emp.estado === 'activa' ? 'destructive' : 'default'} size="sm" onClick={() => handleToggleEstado(emp.id, emp.estado)}>
                           {emp.estado === 'activa' ? (
                             <><PauseCircle className="mr-2 h-4 w-4" /> Suspender</>
@@ -522,47 +495,10 @@ export default function MasterPanelPage() {
       </Tabs>
 
       {/* MODAL: ASIGNAR DUEÑO */}
-      <Dialog open={openUserModal} onOpenChange={setOpenUserModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Asignar Cuenta de Dueño</DialogTitle>
-            <DialogDescription>
-              Crea un usuario administrador para esta empresa. Podrá iniciar sesión inmediatamente.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateUser} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Nombre Completo</Label>
-              <Input required value={newUser.nombre} onChange={e => setNewUser({...newUser, nombre: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Documento (DNI/Cédula)</Label>
-                <Input required value={newUser.documento} onChange={e => setNewUser({...newUser, documento: e.target.value})} />
-              </div>
-              <div className="space-y-2">
-                <Label>Teléfono Móvil</Label>
-                <Input type="tel" required value={newUser.telefono} onChange={e => setNewUser({...newUser, telefono: e.target.value})} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Correo Electrónico (Login)</Label>
-              <Input type="email" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
-            </div>
-            <div className="space-y-2">
-              <Label>Contraseña Provisional</Label>
-              <Input type="password" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setOpenUserModal(false)}>Cancelar</Button>
-              <Button type="submit" disabled={creatingUser}>
-                {creatingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Crear Usuario
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <UserAccessDialog open={openUserModal} onOpenChange={setOpenUserModal}
+        empresaId={selectedEmpresaId} empresaNombre={empresas.find(e => e.id === selectedEmpresaId)?.nombre || ""}
+        allowedRoles={["dueño", "admin"]}
+        onCreated={() => { toast.success("Cuenta de acceso creada correctamente."); void loadData(); }} />
 
       {/* MODAL: DETALLES DE EMPRESA */}
       <Dialog open={openDetailsModal} onOpenChange={setOpenDetailsModal}>
