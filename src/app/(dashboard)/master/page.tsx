@@ -21,18 +21,21 @@ import { UserAccessDialog } from "@/components/configuracion/UserAccessDialog";
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444', '#f59e0b']; // emerald, blue, red, amber
 
+import { apiPost } from '@/lib/api-client';
+
 export default function MasterPanelPage() {
   const { userData, loading: authLoading } = useAuth();
   const router = useRouter();
-  
+
   const [empresas, setEmpresas] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
-  
+  const [pendingStatus, setPendingStatus] = useState<{ id: string; nombre: string; estado: 'activa' | 'suspendida' } | null>(null), [statusReason, setStatusReason] = useState(''), [statusBusy, setStatusBusy] = useState(false);
+
   // Metrics
-  const [metrics, setMetrics] = useState({ 
-    clientes: 0, 
-    prestamos: 0, 
+  const [metrics, setMetrics] = useState({
+    clientes: 0,
+    prestamos: 0,
     empresas: 0,
     capitalTotal: 0
   });
@@ -50,7 +53,7 @@ export default function MasterPanelPage() {
 
   // Forms state
   const [nuevaEmpresa, setNuevaEmpresa] = useState({
-    nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "", 
+    nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "",
     telefono: "", email: "", pais: "Ecuador", moneda: "USD", plan: "basico"
   });
   const [creando, setCreando] = useState(false);
@@ -82,7 +85,7 @@ export default function MasterPanelPage() {
         const dueno = duenosData.find(d => d.empresaId === emp.id);
         return { ...emp, dueno };
       });
-      
+
       setEmpresas(empresasConDueno);
 
       // 3. Cargar Préstamos Globales para métricas
@@ -133,7 +136,7 @@ export default function MasterPanelPage() {
     const currentYear = new Date().getFullYear();
     const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const growth = months.map(m => ({ mes: m, nuevas: 0 }));
-    
+
     empresas.forEach(emp => {
       if (emp.createdAt) {
         const d = emp.createdAt.toDate ? emp.createdAt.toDate() : new Date(emp.createdAt);
@@ -170,11 +173,11 @@ export default function MasterPanelPage() {
         estado: "activa",
         createdAt: serverTimestamp()
       });
-      
+
       toast.success("Empresa (Inquilino) creada exitosamente.");
       setOpenCreateEmpresa(false);
       setNuevaEmpresa({
-        nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "", 
+        nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "",
         telefono: "", email: "", pais: "Ecuador", moneda: "USD", plan: "basico"
       });
       loadData();
@@ -188,13 +191,15 @@ export default function MasterPanelPage() {
 
   const handleToggleEstado = async (empresaId: string, currentStatus: string) => {
     const newStatus = currentStatus === "activa" ? "suspendida" : "activa";
+    setStatusBusy(true);
     try {
-      await updateDoc(doc(db, "empresas", empresaId), { estado: newStatus });
+      await apiPost("/api/admin/empresa-estado", { empresaId, estado: newStatus, expectedEstado: currentStatus, motivo: statusReason });
+      setPendingStatus(null);
       toast.success(`Empresa ${newStatus === 'activa' ? 'activada' : 'suspendida'}.`);
       loadData();
     } catch (error) {
-      toast.error("Error al actualizar el estado.");
-    }
+      toast.error("No se pudo cambiar el estado. Actualiza la lista y vuelve a intentarlo.");
+    } finally { setStatusBusy(false); }
   };
 
   const handleSaveDetails = async (e: React.FormEvent) => {
@@ -225,8 +230,8 @@ export default function MasterPanelPage() {
     return <div className="h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
-  const filteredEmpresas = empresas.filter(e => 
-    e.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filteredEmpresas = empresas.filter(e =>
+    e.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -236,7 +241,7 @@ export default function MasterPanelPage() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary flex items-center gap-2">
             <ShieldAlert className="h-8 w-8 text-destructive" />
-            Centro de Comando SaaS
+            Administración de Finova
           </h2>
           <p className="text-muted-foreground">Analíticas globales y gestión de inquilinos de Finova.</p>
         </div>
@@ -250,10 +255,10 @@ export default function MasterPanelPage() {
           </TabsTrigger>
           <TabsTrigger value="inquilinos">
             <Building2 className="h-4 w-4 mr-2" />
-            Gestión de Inquilinos
+            Financieras
           </TabsTrigger>
         </TabsList>
-        
+
         {/* TAB 1: DASHBOARD */}
         <TabsContent value="dashboard" className="space-y-6 pt-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -369,14 +374,14 @@ export default function MasterPanelPage() {
           <Card>
             <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <CardTitle>Directorio de Inquilinos</CardTitle>
+                <CardTitle>Directorio de financieras</CardTitle>
                 <CardDescription>Gestión de las empresas operando en la plataforma.</CardDescription>
               </div>
               <div className="flex gap-2 w-full sm:w-auto">
                 <div className="relative w-full sm:w-[250px]">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Buscar empresa..." 
+                  <Input
+                    placeholder="Buscar empresa..."
                     className="pl-9"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -470,14 +475,14 @@ export default function MasterPanelPage() {
                         </div>
                         <p className="text-xs text-muted-foreground font-mono mt-1">ID: {emp.id}</p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <Button variant="secondary" size="sm" onClick={() => { setSelectedEmpresaDetails(emp); setOpenDetailsModal(true); }}>
                           <Eye className="mr-2 h-4 w-4" /> Detalles
                         </Button>
                           <Button variant="outline" size="sm" disabled={emp.estado !== 'activa'} title={emp.estado !== 'activa' ? 'Activa la financiera para crear accesos.' : 'Crear una cuenta de dueño o administrador.'} onClick={() => { setSelectedEmpresaId(emp.id); setOpenUserModal(true); }}>
                             <UserPlus className="mr-2 h-4 w-4" /> Crear acceso
                           </Button>
-                        <Button variant={emp.estado === 'activa' ? 'destructive' : 'default'} size="sm" onClick={() => handleToggleEstado(emp.id, emp.estado)}>
+                        <Button variant={emp.estado === 'activa' ? 'destructive' : 'default'} size="sm" onClick={() => { setStatusReason(''); setPendingStatus({ id: emp.id, nombre: emp.nombre, estado: emp.estado }); }}>
                           {emp.estado === 'activa' ? (
                             <><PauseCircle className="mr-2 h-4 w-4" /> Suspender</>
                           ) : (
@@ -495,6 +500,7 @@ export default function MasterPanelPage() {
       </Tabs>
 
       {/* MODAL: ASIGNAR DUEÑO */}
+      <Dialog open={!!pendingStatus} onOpenChange={open => { if (!open && !statusBusy) setPendingStatus(null); }}><DialogContent showCloseButton={!statusBusy}><DialogHeader><DialogTitle>{pendingStatus?.estado === 'activa' ? 'Suspender financiera' : 'Reactivar financiera'}</DialogTitle><DialogDescription>{pendingStatus?.nombre}. La suspensión bloqueará operaciones y acceso al portal; conservará los usuarios y el historial financiero.</DialogDescription></DialogHeader><label className="space-y-2 text-sm">Motivo administrativo<Input minLength={10} maxLength={500} value={statusReason} onChange={e => setStatusReason(e.target.value)} /></label><DialogFooter><Button variant="outline" disabled={statusBusy} onClick={() => setPendingStatus(null)}>Cancelar</Button><Button variant={pendingStatus?.estado === 'activa' ? 'destructive' : 'default'} disabled={statusBusy || statusReason.trim().length < 10} onClick={() => { if (pendingStatus) void handleToggleEstado(pendingStatus.id, pendingStatus.estado); }}>{statusBusy ? 'Actualizando…' : 'Confirmar cambio'}</Button></DialogFooter></DialogContent></Dialog>
       <UserAccessDialog open={openUserModal} onOpenChange={setOpenUserModal}
         empresaId={selectedEmpresaId} empresaNombre={empresas.find(e => e.id === selectedEmpresaId)?.nombre || ""}
         allowedRoles={["dueño", "admin"]}
@@ -509,11 +515,11 @@ export default function MasterPanelPage() {
               Información legal, comercial y de contacto de la financiera y su dueño.
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedEmpresaDetails && (
             <form onSubmit={handleSaveDetails} className="space-y-6">
               <div className="grid md:grid-cols-2 gap-6">
-                
+
                 {/* Columna Izquierda: Empresa */}
                 <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
                   <h3 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
@@ -573,7 +579,7 @@ export default function MasterPanelPage() {
                   <h3 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
                     <Users className="h-5 w-5 text-primary" /> Datos del Dueño
                   </h3>
-                  
+
                   {selectedEmpresaDetails.dueno ? (
                     <>
                       <div className="space-y-2">

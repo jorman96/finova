@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { SearchPicker } from '@/components/SearchPicker';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,11 +32,11 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
 
   // Form states
   const [inversionistaId, setInversionistaId] = useState("");
-  const [montoTotal, setMontoTotal] = useState<number>(8000);
-  const [montoCartera, setMontoCartera] = useState<number>(2000);
-  const [montoOtros, setMontoOtros] = useState<number>(6000);
-  const [tieneInteres, setTieneInteres] = useState(true);
-  const [tasaInteresMensual, setTasaInteresMensual] = useState<number>(2.5);
+  const [montoTotal, setMontoTotal] = useState<number>(0);
+  const [montoCartera, setMontoCartera] = useState<number>(0);
+  const [montoOtros, setMontoOtros] = useState<number>(0);
+  const [tieneInteres, setTieneInteres] = useState(false);
+  const [tasaInteresMensual, setTasaInteresMensual] = useState<number>(0);
   const [modalidadPago, setModalidadPago] = useState<ModalidadPagoInversionista>('interes_mensual_capital_al_vencimiento');
   const [plazoMeses, setPlazoMeses] = useState<number>(6);
   const [fechaInicio, setFechaInicio] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -52,9 +53,6 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
       const list: Inversionista[] = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() } as Inversionista));
       setInversionistas(list);
-      if (list.length > 0 && !inversionistaId) {
-        setInversionistaId(list[0].id);
-      }
     } catch (e: any) {
       console.error("Error al cargar inversionistas:", e);
     } finally {
@@ -207,7 +205,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={triggerButton ? (triggerButton as any) : <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white" />}>
+      <DialogTrigger render={triggerButton ? (triggerButton as any) : <Button className="gap-2 " />}>
         {!triggerButton && (
           <>
             <PlusCircle className="h-4 w-4" />
@@ -227,6 +225,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5 py-2">
+          <p className="rounded-lg border bg-muted/30 p-3 text-sm">Registra este financiamiento una sola vez. Si ya ingresaste el dinero como aporte en Pagos de capital, solicita su vinculación y conciliación antes de crear otro registro de fondeo.</p>
           {/* Selección de Inversionista */}
           <div className="space-y-1.5 bg-muted/30 p-3 rounded-lg border">
             <div className="flex items-center justify-between">
@@ -252,18 +251,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
                 <AlertCircle className="h-4 w-4" /> No hay inversionistas registrados. Haz clic arriba para registrar el primero.
               </div>
             ) : (
-              <Select value={inversionistaId} onValueChange={(val) => setInversionistaId(val || "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar inversionista" />
-                </SelectTrigger>
-                <SelectContent>
-                  {inversionistas.map(inv => (
-                    <SelectItem key={inv.id} value={inv.id}>
-                      {inv.nombres} {inv.apellidos || ''} — C.I./RUC: {inv.identificacion} {inv.banco ? `(${inv.banco})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchPicker label="Inversionista fondeador" value={inversionistaId} onChange={setInversionistaId} items={inversionistas.map(inv => ({ id: inv.id, label: `${inv.nombres} ${inv.apellidos || ''} — ${inv.identificacion}`, search: inv.banco || '' }))} />
             )}
           </div>
 
@@ -522,7 +510,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button type="submit" disabled={loading} className="gap-2 ">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Confirmar y Crear Contrato de Inversión
             </Button>

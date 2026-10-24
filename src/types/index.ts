@@ -72,13 +72,13 @@ export interface Cliente {
   telefonoSecundario?: string;
   correo: string;
   direccion: string;
-  
+
   // Información laboral
   empresa: string;
   cargo: string;
   ingresosMensuales: number;
   antiguedadLaboral: string;
-  
+
   // Referencias
   referencia1: string;
   telefonoRef1: string;
@@ -88,6 +88,7 @@ export interface Cliente {
   // Estado financiero/Resumen
   estado: 'activo' | 'moroso' | 'cerrado' | 'nuevo';
   score?: number;
+  scoreRevision?: { anterior: number | null; actual: number; motivo: string; usuarioNombre: string; fecha: string };
   documentos?: { nombre: string; url: string }[];
   createdAt: any;
 }
@@ -106,12 +107,12 @@ export interface Prestamo {
   fechaPrimerPago: string;
   garantia: string;
   observaciones: string;
-  
+
   // Financiero
   totalInteres: number;
   totalPagar: number;
   saldoRestante: number;
-  
+
   estado: 'activo' | 'completado' | 'moroso';
   createdAt: any;
 }
@@ -129,6 +130,8 @@ export interface Cuota {
   saldoPendiente: number; // Saldo de capital restante después de esta cuota
   estado: 'pendiente' | 'pagada' | 'vencida' | 'parcial';
   montoPagado: number;
+  capitalCobradoCentavos?: number;
+  interesCobradoCentavos?: number;
   fechaPago?: string;
 }
 
@@ -144,6 +147,7 @@ export interface Pago {
   observaciones: string;
   comprobanteUrl?: string | null;
   fecha: any;
+  fechaStr?: string;
   registradoPor: string;
 }
 
@@ -167,7 +171,7 @@ export interface Inversionista {
   createdAt: any;
 }
 
-export type ModalidadPagoInversionista = 
+export type ModalidadPagoInversionista =
   | 'interes_mensual_capital_al_vencimiento' // Interés cada mes, capital al final
   | 'cuota_amortizada_mensual'              // Capital + interés prorrateado mes a mes
   | 'devolucion_capital_en_cuotas';          // Sin interés: solo capital en cuotas mensuales

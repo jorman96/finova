@@ -5,14 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Wallet, 
-  PiggyBank, 
-  TrendingUp, 
-  CreditCard, 
-  DollarSign, 
-  AlertCircle, 
-  Loader2, 
+import {
+  Wallet,
+  PiggyBank,
+  TrendingUp,
+  CreditCard,
+  DollarSign,
+  AlertCircle,
+  Loader2,
   Calendar,
   CalendarRange,
   RotateCcw,
@@ -27,17 +27,21 @@ import { apiPost } from '@/lib/api-client';
 import { useAuth } from "@/contexts/AuthContext";
 import { PagosChart } from "@/components/dashboard/PagosChart";
 import { UltimosMovimientos } from "@/components/dashboard/UltimosMovimientos";
-import { 
-  format, 
-  startOfDay, 
-  endOfDay, 
-  startOfWeek, 
-  endOfWeek, 
-  startOfMonth, 
-  endOfMonth, 
-  isWithinInterval 
+import {
+  format,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  isWithinInterval
 } from "date-fns";
 import { es } from "date-fns/locale";
+
+import { isOverdue, businessDate } from '@/lib/business-date';
+import { useBusinessDay } from '@/hooks/use-company';
+import { LoadError } from '@/components/ListPagination';
 
 type PeriodoTipo = 'hoy' | 'semana' | 'mes' | 'historico' | 'personalizado';
 
@@ -47,6 +51,8 @@ export default function DashboardPage() {
 
   // Estados de datos crudos
   const [empresaData, setEmpresaData] = useState<any>(null);
+  const day = useBusinessDay(empresaData?.zonaHoraria);
+  const [loadError, setLoadError] = useState('');
   const [rawClientes, setRawClientes] = useState<any[]>([]);
   const [rawPrestamos, setRawPrestamos] = useState<any[]>([]);
   const [rawPagos, setRawPagos] = useState<any[]>([]);
@@ -72,19 +78,25 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!userData?.empresaId) return;
 
-    let clientesMap = new Map();
+    const clientesMap = new Map();
+    const ready = new Set<string>();
+    const markReady = (name: string) => { ready.add(name); if (ready.size === 8) setLoading(false); };
+    const canViewFunding = ['superadmin','dueño','admin'].includes(userData.rol);
+    if (!canViewFunding) ['Inversiones','CuotasInversionistas','PagosInversionistas'].forEach(markReady);
+    const loadFailed = () => { setLoadError('No se pudo consultar toda la información. Reintenta antes de utilizar estos totales.'); setLoading(false); };
 
     const unsubEmpresa = onSnapshot(
       doc(db, "empresas", userData.empresaId),
       (snap) => {
         if (snap.exists()) {
           setEmpresaData(snap.data());
-        }
-      }
+          markReady("empresa");
+        } else loadFailed();
+      }, loadFailed
     );
 
     const unsubClientes = onSnapshot(
-      query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId)), 
+      query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId)),
       (snap) => {
         const clientes: any[] = [];
         snap.forEach(d => {
@@ -92,74 +104,73 @@ export default function DashboardPage() {
           clientes.push(cData);
           clientesMap.set(d.id, `${cData.nombres || ''} ${cData.apellidos || ''}`.trim());
         });
-        setRawClientes(clientes);
-      }
+        setRawClientes(clientes); markReady("Clientes");
+      }, loadFailed
     );
 
     const unsubPrestamos = onSnapshot(
-      query(collection(db, "prestamos"), where("empresaId", "==", userData.empresaId)), 
+      query(collection(db, "prestamos"), where("empresaId", "==", userData.empresaId)),
       (snap) => {
         const prestamos: any[] = [];
         snap.forEach(d => {
           prestamos.push({ id: d.id, ...d.data() });
         });
-        setRawPrestamos(prestamos);
-      }
+        setRawPrestamos(prestamos); markReady("Prestamos");
+      }, loadFailed
     );
 
     const unsubPagos = onSnapshot(
-      query(collection(db, "pagos"), where("empresaId", "==", userData.empresaId), orderBy("fecha", "desc")), 
+      query(collection(db, "pagos"), where("empresaId", "==", userData.empresaId), orderBy("fecha", "desc")),
       (snap) => {
         const pagos: any[] = [];
         snap.forEach(d => {
           const pd = d.data();
-          pagos.push({ 
-            id: d.id, 
+          pagos.push({
+            id: d.id,
             ...pd,
             clienteNombre: pd.clienteNombre || clientesMap.get(pd.clienteId) || 'Cliente Desconocido'
           });
         });
-        setRawPagos(pagos);
-      }
+        setRawPagos(pagos); markReady("Pagos");
+      }, loadFailed
     );
 
     const unsubMora = onSnapshot(
-      query(collection(db, "cuotas"), where("empresaId", "==", userData.empresaId), where("estado", "==", "vencida")), 
+      query(collection(db, "cuotas"), where("empresaId", "==", userData.empresaId)),
       (snap) => {
         const cuotas: any[] = [];
         snap.forEach(d => {
           cuotas.push({ id: d.id, ...d.data() });
         });
-        setRawCuotasVencidas(cuotas);
-        setLoading(false);
-      }
+        setRawCuotasVencidas(cuotas); markReady("CuotasVencidas");
+      }, loadFailed
     );
 
-    const unsubInversiones = onSnapshot(
+    const unsubInversiones = !canViewFunding ? () => {} : onSnapshot(
       query(collection(db, "inversion_contratos"), where("empresaId", "==", userData.empresaId)),
       (snap) => {
         const list: any[] = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-        setRawInversiones(list);
-      }
+        setRawInversiones(list); markReady("Inversiones");
+      }, loadFailed
     );
 
-    const unsubCuotasInv = onSnapshot(
+    const unsubCuotasInv = !canViewFunding ? () => {} : onSnapshot(
       query(collection(db, "cuotas_inversionistas"), where("empresaId", "==", userData.empresaId)),
       (snap) => {
         const list: any[] = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-        setRawCuotasInversionistas(list);
-      }
+        setRawCuotasInversionistas(list); markReady("CuotasInversionistas");
+      }, loadFailed
     );
 
-    const unsubPagosInv = onSnapshot(
+    const unsubPagosInv = !canViewFunding ? () => {} : onSnapshot(
       query(collection(db, "pagos_inversionistas"), where("empresaId", "==", userData.empresaId)),
       (snap) => {
         const list: any[] = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-        setRawPagosInversionistas(list);
-      }
+        setRawPagosInversionistas(list); markReady("PagosInversionistas");
+      }, loadFailed
     );
 
     return () => {
@@ -176,7 +187,7 @@ export default function DashboardPage() {
 
   // Cálculo del rango de fecha activo
   const dateRange = useMemo(() => {
-    const now = new Date();
+    const now = new Date(day + "T12:00:00");
     if (periodo === 'hoy') {
       return { start: startOfDay(now), end: endOfDay(now), label: "Hoy" };
     }
@@ -184,10 +195,10 @@ export default function DashboardPage() {
       return { start: startOfWeek(now, { weekStartsOn: 1 }), end: endOfWeek(now, { weekStartsOn: 1 }), label: "Esta Semana" };
     }
     if (periodo === 'mes') {
-      return { 
-        start: startOfMonth(now), 
-        end: endOfMonth(now), 
-        label: `Mes en curso (${format(now, "MMMM yyyy", { locale: es })})` 
+      return {
+        start: startOfMonth(now),
+        end: endOfMonth(now),
+        label: `Mes en curso (${format(now, "MMMM yyyy", { locale: es })})`
       };
     }
     if (periodo === 'personalizado') {
@@ -197,7 +208,7 @@ export default function DashboardPage() {
     }
     // Historico
     return { start: null, end: null, label: "Histórico Completo" };
-  }, [periodo, fechaDesde, fechaHasta]);
+  }, [periodo, fechaDesde, fechaHasta, day]);
 
   // Métricas calculadas según el filtro
   const filteredMetrics = useMemo(() => {
@@ -206,7 +217,8 @@ export default function DashboardPage() {
       if (!dateInput) return false;
       const d = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
       if (isNaN(d.getTime())) return false;
-      return isWithinInterval(d, { start: dateRange.start, end: dateRange.end });
+      const key = typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput) ? dateInput : businessDate(d, empresaData?.zonaHoraria);
+      return key >= format(dateRange.start, 'yyyy-MM-dd') && key <= format(dateRange.end, 'yyyy-MM-dd');
     };
 
     // Capital Invertido Total (Acumulado en caja)
@@ -216,7 +228,7 @@ export default function DashboardPage() {
 
     // Préstamos filtrados por período
     const prestamosFiltrados = rawPrestamos.filter(p => {
-      const f = p.fechaDesembolso ? new Date(p.fechaDesembolso + "T12:00:00") : (p.createdAt?.toDate ? p.createdAt.toDate() : (p.createdAt ? new Date(p.createdAt) : null));
+      const f = p.fechaDesembolso ? p.fechaDesembolso : (p.createdAt?.toDate ? p.createdAt.toDate() : (p.createdAt ? new Date(p.createdAt) : null));
       return isWithinRange(f);
     });
 
@@ -224,7 +236,7 @@ export default function DashboardPage() {
     const interesProyectadoPeriodo = prestamosFiltrados.reduce((sum, p) => sum + (p.totalInteres || 0), 0);
 
     // Pagos filtrados por período
-    const pagosFiltrados = rawPagos.filter(p => isWithinRange(p.fecha));
+    const pagosFiltrados = rawPagos.filter(p => isWithinRange(p.fechaStr || p.fecha));
     const totalRecaudadoPeriodo = pagosFiltrados.reduce((sum, p) => sum + (p.monto || 0), 0);
 
     // Fondeo de Inversionistas Destinado a Cartera de Préstamos
@@ -268,14 +280,14 @@ export default function DashboardPage() {
     // Mora (Riesgo)
     let moraVencido = 0;
     const clientesMora = new Set();
-    rawCuotasVencidas.forEach(c => {
+    rawCuotasVencidas.filter(c => isOverdue(c, day)).forEach(c => {
       moraVencido += ((c.totalCuota || 0) - (c.montoPagado || 0));
       if (c.clienteId) clientesMora.add(c.clienteId);
     });
 
     // Retorno bruto del período
-    const porcentajeRetorno = capitalPrestadoPeriodo > 0 
-      ? ((totalRecaudadoPeriodo / capitalPrestadoPeriodo) * 100).toFixed(1) 
+    const porcentajeRetorno = capitalPrestadoPeriodo > 0
+      ? ((totalRecaudadoPeriodo / capitalPrestadoPeriodo) * 100).toFixed(1)
       : "0.0";
 
     return {
@@ -298,8 +310,9 @@ export default function DashboardPage() {
       pagosFiltrados,
       prestamosFiltradosCount: prestamosFiltrados.length
     };
-  }, [empresaData, rawPrestamos, rawPagos, rawCuotasVencidas, rawInversiones, rawCuotasInversionistas, rawPagosInversionistas, dateRange, capitalTotals]);
+  }, [empresaData, rawPrestamos, rawPagos, rawCuotasVencidas, rawInversiones, rawCuotasInversionistas, rawPagosInversionistas, dateRange, capitalTotals, day]);
 
+  if (loadError) return <LoadError message={loadError} />;
   if (loading) {
     return (
       <div className="h-[60vh] flex items-center justify-center">
@@ -310,46 +323,46 @@ export default function DashboardPage() {
 
   // 6 Tarjetas del Dashboard
   const summaryCards = [
-    { 
-      title: "Capital Invertido", 
-      value: `$${filteredMetrics.capitalInvertido.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
-      icon: PiggyBank, 
-      trend: "Inversión total registrada",
+    {
+      title: "Capital propio registrado",
+      value: `$${filteredMetrics.capitalInvertido.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      icon: PiggyBank,
+      trend: "Acumulado histórico · aportes propios",
       color: "text-blue-500"
     },
-    { 
-      title: "Caja Disponible", 
+    {
+      title: "Caja registrada",
       value: process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED === 'true' && !capitalTotals ? 'Por verificar' : `$${filteredMetrics.cajaDisponible.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      icon: Wallet, 
+      icon: Wallet,
       trend: capitalTotals?.enabled ? `Incluye $${((capitalTotals.reserved || 0) / 100).toFixed(2)} reservados para capital · actualiza al volver a esta pantalla` : filteredMetrics.totalFondeoCartera > 0 ? "Liquidez (incluye fondeo)" : "Liquidez actual",
       color: "text-emerald-500"
     },
-    { 
-      title: "Capital Prestado", 
-      value: `$${filteredMetrics.capitalPrestadoPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
-      icon: CreditCard, 
+    {
+      title: "Capital desembolsado",
+      value: `$${filteredMetrics.capitalPrestadoPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      icon: CreditCard,
       trend: periodo === 'historico' ? "Colocación total" : `${filteredMetrics.prestamosFiltradosCount} créditos en el período`,
       color: "text-indigo-500"
     },
-    { 
-      title: "Total Recaudado", 
-      value: `$${filteredMetrics.totalRecaudadoPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
-      icon: DollarSign, 
-      trend: `${filteredMetrics.porcentajeRetorno}% retorno período`,
+    {
+      title: "Cobros recibidos",
+      value: `$${filteredMetrics.totalRecaudadoPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      icon: DollarSign,
+      trend: "Capital e interés recibidos en el período",
       color: "text-emerald-600 dark:text-emerald-400"
     },
-    { 
-      title: "Interés Proyectado", 
-      value: `$${filteredMetrics.interesProyectadoPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
-      icon: TrendingUp, 
-      trend: "Ganancia esperada período",
+    {
+      title: "Interés Proyectado",
+      value: `$${filteredMetrics.interesProyectadoPeriodo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      icon: TrendingUp,
+      trend: "Interés contractual · no es utilidad cobrada",
       color: "text-purple-500"
     },
-    { 
-      title: "Mora (Riesgo)", 
-      value: `$${filteredMetrics.moraVencido.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
-      icon: AlertCircle, 
-      trend: `${filteredMetrics.clientesMoraCount} clientes en atraso`, 
+    {
+      title: "Saldo vencido actual",
+      value: `$${filteredMetrics.moraVencido.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      icon: AlertCircle,
+      trend: `${filteredMetrics.clientesMoraCount} clientes en atraso`,
       alert: filteredMetrics.clientesMoraCount > 0,
       color: "text-rose-500"
     },
@@ -360,9 +373,9 @@ export default function DashboardPage() {
       {/* Encabezado y Barra de Filtros */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b pb-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Inicio</h2>
           <p className="text-sm text-muted-foreground">
-            Resumen financiero con corte periódico de cartera.
+            Saldos actuales y actividad de tu financiera.
           </p>
         </div>
 
@@ -370,28 +383,28 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           {/* Botones de Selección Rápida */}
           <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border">
-            <Button 
-              type="button" 
-              size="sm" 
-              variant={periodo === 'hoy' ? 'default' : 'ghost'} 
+            <Button
+              type="button"
+              size="sm"
+              variant={periodo === 'hoy' ? 'default' : 'ghost'}
               className="text-xs h-7 px-2.5"
               onClick={() => setPeriodo('hoy')}
             >
               Hoy
             </Button>
-            <Button 
-              type="button" 
-              size="sm" 
-              variant={periodo === 'semana' ? 'default' : 'ghost'} 
+            <Button
+              type="button"
+              size="sm"
+              variant={periodo === 'semana' ? 'default' : 'ghost'}
               className="text-xs h-7 px-2.5"
               onClick={() => setPeriodo('semana')}
             >
               Semana
             </Button>
-            <Button 
-              type="button" 
-              size="sm" 
-              variant={periodo === 'mes' ? 'default' : 'ghost'} 
+            <Button
+              type="button"
+              size="sm"
+              variant={periodo === 'mes' ? 'default' : 'ghost'}
               className="text-xs h-7 px-2.5 font-semibold"
               onClick={() => {
                 const now = new Date();
@@ -402,19 +415,19 @@ export default function DashboardPage() {
             >
               Este Mes
             </Button>
-            <Button 
-              type="button" 
-              size="sm" 
-              variant={periodo === 'historico' ? 'default' : 'ghost'} 
+            <Button
+              type="button"
+              size="sm"
+              variant={periodo === 'historico' ? 'default' : 'ghost'}
               className="text-xs h-7 px-2.5"
               onClick={() => setPeriodo('historico')}
             >
               Histórico
             </Button>
-            <Button 
-              type="button" 
-              size="sm" 
-              variant={periodo === 'personalizado' ? 'default' : 'ghost'} 
+            <Button
+              type="button"
+              size="sm"
+              variant={periodo === 'personalizado' ? 'default' : 'ghost'}
               className="text-xs h-7 px-2.5 flex items-center gap-1"
               onClick={() => setPeriodo('personalizado')}
             >
@@ -434,19 +447,19 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Desde:</span>
-            <Input 
-              type="date" 
-              value={fechaDesde} 
-              onChange={e => setFechaDesde(e.target.value)} 
+            <Input
+              type="date"
+              value={fechaDesde}
+              onChange={e => setFechaDesde(e.target.value)}
               className="h-8 text-xs w-[140px]"
             />
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Hasta:</span>
-            <Input 
-              type="date" 
-              value={fechaHasta} 
-              onChange={e => setFechaHasta(e.target.value)} 
+            <Input
+              type="date"
+              value={fechaHasta}
+              onChange={e => setFechaHasta(e.target.value)}
               className="h-8 text-xs w-[140px]"
             />
           </div>
@@ -456,16 +469,18 @@ export default function DashboardPage() {
         </div>
       )}
 
+      <div className="flex flex-wrap gap-2"><Link href="/mora" className="rounded-lg border bg-card px-4 py-3 text-sm hover:bg-muted">Revisar cuotas vencidas</Link><Link href="/prestamos" className="rounded-lg border bg-card px-4 py-3 text-sm hover:bg-muted">Consultar créditos</Link>{['dueño','admin','superadmin'].includes(userData?.rol || '') && <Link href="/capital" className="rounded-lg border bg-card px-4 py-3 text-sm hover:bg-muted">Revisar compromisos de capital</Link>}</div>
+      <p className="text-sm text-muted-foreground">Capital propio, caja registrada y mora son saldos actuales. Los desembolsos, cobros e intereses proyectados corresponden al período seleccionado. La caja registrada requiere conciliación y puede incluir reservas.</p>
       {/* Indicador del Período Activo */}
       <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
         <div className="flex items-center gap-1.5">
           <Calendar className="h-3.5 w-3.5 text-primary" />
-          <span>Mostrando métricas para: <strong className="text-foreground capitalize">{dateRange.label}</strong></span>
+          <span>Actividad del período: <strong className="text-foreground capitalize">{dateRange.label}</strong></span>
         </div>
         {periodo !== 'mes' && (
-          <Button 
-            variant="link" 
-            size="sm" 
+          <Button
+            variant="link"
+            size="sm"
             className="h-auto p-0 text-xs text-primary"
             onClick={() => setPeriodo('mes')}
           >
@@ -475,24 +490,24 @@ export default function DashboardPage() {
       </div>
 
       {/* 6 Tarjetas en 1 Sola Fila Horizontal en Pantallas Grandes (lg:grid-cols-6) */}
-      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-        {summaryCards.map((card, index) => (
-          <Card 
-            key={index} 
+      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 xl:grid-cols-3 gap-3">
+        {summaryCards.filter((_, index) => ['superadmin','dueño','admin'].includes(userData?.rol || '') || [2,3,5].includes(index)).map((card, index) => (
+          <Card
+            key={index}
             className={`transition-all duration-200 hover:shadow-md ${
-              card.alert 
-                ? "border-destructive/50 bg-destructive/5" 
+              card.alert
+                ? "border-destructive/50 bg-destructive/5"
                 : "hover:border-primary/40 bg-card"
             }`}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3.5 pb-1">
-              <CardTitle className="text-xs font-medium text-muted-foreground truncate pr-1">
+              <CardTitle className="text-xs font-medium text-muted-foreground break-words pr-1">
                 {card.title}
               </CardTitle>
               <card.icon className={`h-4 w-4 shrink-0 ${card.alert ? "text-destructive" : card.color || "text-muted-foreground"}`} />
             </CardHeader>
             <CardContent className="p-3.5 pt-1">
-              <div className={`text-lg sm:text-xl xl:text-2xl font-bold tracking-tight truncate ${card.alert ? "text-destructive" : ""}`}>
+              <div className={`text-lg sm:text-xl xl:text-2xl font-bold tracking-tight break-words ${card.alert ? "text-destructive" : ""}`}>
                 {card.value}
               </div>
               <p className={`text-[11px] mt-1 whitespace-normal ${card.alert ? "text-destructive font-medium" : "text-muted-foreground"}`}>
@@ -502,7 +517,7 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
-      
+
       {/* Panel de Control y Cobertura de Inversionistas */}
       {(filteredMetrics.totalFondeoCartera > 0 || filteredMetrics.inversionesActivasCount > 0) && (
         <Card className="bg-gradient-to-r from-emerald-500/10 via-card to-purple-500/10 border-emerald-500/30 shadow-xs">
@@ -599,7 +614,7 @@ export default function DashboardPage() {
             <PagosChart data={filteredMetrics.pagosFiltrados} />
           </CardContent>
         </Card>
-        
+
         <Card className="col-span-3">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">

@@ -19,15 +19,18 @@ const formatMoney = (amount: number) => {
 import { appendRows, downloadWorkbook } from "@/lib/excel-export";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { businessDate, isOverdue } from '@/lib/business-date';
+import { useCompany } from '@/hooks/use-company';
 import { startOfMonth, endOfMonth, format } from "date-fns";
 
 export default function ReportesPage() {
   const { userData } = useAuth();
-  
+  const company = useCompany();
+
   // Opciones de configuración
   const [fechaInicio, setFechaInicio] = useState(format(startOfMonth(new Date()), "yyyy-MM-dd"));
   const [fechaFin, setFechaFin] = useState(format(endOfMonth(new Date()), "yyyy-MM-dd"));
-  
+
   const [incluirResumen, setIncluirResumen] = useState(true);
   const [incluirPrestamos, setIncluirPrestamos] = useState(true);
   const [incluirCobros, setIncluirCobros] = useState(true);
@@ -36,67 +39,21 @@ export default function ReportesPage() {
   const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  // Recolectar datos
+  const previewKey = JSON.stringify([fechaInicio, fechaFin, incluirResumen, incluirPrestamos, incluirCobros, incluirMora]);
+  const [preview, setPreview] = useState<{ key: string; cobros: number; capital: number; mora: number; count: number; date: string } | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false), [previewError, setPreviewError] = useState('');
+  const currentPreview = preview?.key === previewKey ? preview : null;
   const fetchReportData = async () => {
-    if (!userData?.empresaId) throw new Error("No empresa ID");
-    
+    if (!userData?.empresaId) throw new Error('No se pudo identificar la financiera.');
+    if (!fechaInicio || !fechaFin || fechaInicio > fechaFin) throw new Error('La fecha inicial debe ser anterior o igual a la final.');
+    const empresaId = userData.empresaId;
+    const snapshots = await Promise.all(['clientes', 'pagos', 'prestamos', 'cuotas'].map(name => getDocs(query(collection(db, name), where('empresaId', '==', empresaId)))));
+    const clients = new Map(snapshots[0].docs.map(d => [d.id, `${d.data().nombres || ''} ${d.data().apellidos || ''}`.trim()]));
+    const cut = businessDate(new Date(), company?.zonaHoraria);
     const data: any = {};
-    
-    // Diccionario de clientes para inyectar nombres
-    const qClientes = query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId));
-    const snapClientes = await getDocs(qClientes);
-    const clientesMap = new Map();
-    snapClientes.docs.forEach(doc => {
-      const c = doc.data();
-      clientesMap.set(doc.id, `${c.nombres} ${c.apellidos}`);
-    });
-    
-    // 1. Cobros (Pagos en el rango de fechas)
-    if (incluirCobros || incluirResumen) {
-      const qPagos = query(
-        collection(db, "pagos"),
-        where("empresaId", "==", userData.empresaId)
-      );
-      const snapPagos = await getDocs(qPagos);
-      const todosPagos = snapPagos.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
-      
-      // Filtrar en memoria para evitar errores de índices compuestos en Firebase
-      data.pagos = todosPagos
-        .filter(p => p.fechaStr >= fechaInicio && p.fechaStr <= fechaFin)
-        .sort((a, b) => a.fechaStr.localeCompare(b.fechaStr));
-    }
-
-    // 2. Préstamos Otorgados en el rango
-    if (incluirPrestamos || incluirResumen) {
-      const qPrestamos = query(
-        collection(db, "prestamos"),
-        where("empresaId", "==", userData.empresaId)
-      );
-      const snapPrestamos = await getDocs(qPrestamos);
-      data.prestamos = snapPrestamos.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-
-    // 3. Mora actual
-    if (incluirMora || incluirResumen) {
-      const qMora = query(
-        collection(db, "cuotas"),
-        where("empresaId", "==", userData.empresaId)
-      );
-      const snapMora = await getDocs(qMora);
-      const todayStr = format(new Date(), "yyyy-MM-dd");
-      
-      // Filtrar en memoria por estado y fecha de vencimiento
-      data.mora = snapMora.docs
-        .map(doc => {
-          const d = doc.data() as any;
-          return { id: doc.id, clienteNombre: clientesMap.get(d.clienteId) || "Desconocido", ...d };
-        })
-        .filter((d: any) => 
-          (d.estado === 'pendiente' || d.estado === 'vencida' || d.estado === 'parcial') && 
-          d.fechaVencimiento < todayStr
-        );
-    }
-
+    if (incluirCobros || incluirResumen) data.pagos = snapshots[1].docs.map(d => ({ id: d.id, ...d.data() } as any)).map(p => ({ ...p, fechaStr: p.fechaStr || (p.fecha?.toDate ? businessDate(p.fecha.toDate(), company?.zonaHoraria) : '') })).filter(p => p.fechaStr >= fechaInicio && p.fechaStr <= fechaFin).sort((a, b) => a.fechaStr.localeCompare(b.fechaStr));
+    if (incluirPrestamos || incluirResumen) data.prestamos = snapshots[2].docs.map(d => ({ id: d.id, ...d.data() }));
+    if (incluirMora || incluirResumen) data.mora = snapshots[3].docs.map(d => ({ id: d.id, clienteNombre: clients.get(d.data().clienteId) || 'Cliente no disponible', ...d.data() } as any)).filter(c => isOverdue(c, cut));
     return data;
   };
 
@@ -173,7 +130,7 @@ export default function ReportesPage() {
       toast.success("Excel generado correctamente");
     } catch (e) {
       console.error(e);
-      toast.error("Error al generar Excel");
+      toast.error(e instanceof Error ? e.message : "Error al generar Excel");
     } finally {
       setIsGeneratingExcel(false);
     }
@@ -184,10 +141,10 @@ export default function ReportesPage() {
       setIsGeneratingPDF(true);
       const data = await fetchReportData();
       const doc = new jsPDF();
-      
+
       doc.setFontSize(20);
       doc.text("Reporte Consolidado Gerencial", 14, 22);
-      
+
       doc.setFontSize(11);
       doc.text(`Generado el: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 30);
       doc.text(`Periodo Analizado: ${fechaInicio} al ${fechaFin}`, 14, 36);
@@ -202,7 +159,7 @@ export default function ReportesPage() {
         doc.setFontSize(14);
         doc.text("Resumen Ejecutivo", 14, currentY);
         currentY += 5;
-        
+
         autoTable(doc, {
           startY: currentY,
           head: [['Métrica', 'Valor']],
@@ -282,7 +239,7 @@ export default function ReportesPage() {
 
     } catch (e) {
       console.error(e);
-      toast.error("Error al generar PDF");
+      toast.error(e instanceof Error ? e.message : "Error al generar PDF");
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -292,9 +249,10 @@ export default function ReportesPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Reporte Consolidado Maestro</h2>
-        <p className="text-muted-foreground">Configura y genera un reporte gerencial con toda la información clave de tu financiera en un solo documento.</p>
+        <p className="text-muted-foreground">Consulta los totales y genera el informe con sus fechas y alcance definidos.</p>
       </div>
 
+      <section className="rounded-xl border bg-card p-5 space-y-3"><h3 className="font-semibold">Vista previa y alcance</h3><p className="text-sm text-muted-foreground">Los cobros corresponden al rango seleccionado. El capital desembolsado incluye el historial completo. La mora se calcula al corte operativo actual de la financiera. Los cobros incluyen devolución de capital e intereses; no equivalen a utilidad.</p><Button variant="outline" disabled={previewBusy || isGeneratingPDF || isGeneratingExcel} onClick={async () => { setPreviewBusy(true); setPreviewError(''); try { const data = await fetchReportData(); setPreview({ key: previewKey, cobros: data.pagos?.reduce((v: number, p: any) => v + Math.round((p.monto || 0) * 100), 0) / 100 || 0, capital: data.prestamos?.reduce((v: number, p: any) => v + Math.round((p.monto || 0) * 100), 0) / 100 || 0, mora: data.mora?.reduce((v: number, c: any) => v + Math.round(c.totalCuota * 100) - Math.round((c.montoPagado || 0) * 100), 0) / 100 || 0, count: data.pagos?.length || 0, date: new Date().toLocaleString('es-EC', { timeZone: company?.zonaHoraria || 'America/Guayaquil' }) }); } catch (e) { setPreviewError(e instanceof Error ? e.message : 'No se pudo consultar la vista previa.'); } finally { setPreviewBusy(false); } }}>{previewBusy ? 'Consultando…' : 'Consultar vista previa'}</Button>{previewError && <p role="alert" className="text-destructive">{previewError}</p>}{currentPreview && <div className="space-y-2 text-sm" role="status">{(incluirCobros || incluirResumen) && <p>Cobros del período: {formatMoney(currentPreview.cobros)} · {currentPreview.count} recibos</p>}{(incluirPrestamos || incluirResumen) && <p>Capital desembolsado histórico: {formatMoney(currentPreview.capital)}</p>}{(incluirMora || incluirResumen) && <p>Saldo vencido actual: {formatMoney(currentPreview.mora)}</p>}<p className="text-muted-foreground">Consultado: {currentPreview.date}. La exportación vuelve a consultar los movimientos.</p></div>}</section>
       <div className="grid gap-6 md:grid-cols-12">
         <Card className="md:col-span-8">
           <CardHeader>
@@ -302,7 +260,7 @@ export default function ReportesPage() {
             <CardDescription>Selecciona qué información deseas incluir en el documento final.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            
+
             {/* Rango de Fechas */}
             <div className="space-y-3">
               <Label className="text-base">Rango de Fechas (Para análisis de cobros e ingresos)</Label>
@@ -311,7 +269,7 @@ export default function ReportesPage() {
                   <Label htmlFor="fechaInicio" className="text-xs text-muted-foreground">Fecha Inicio</Label>
                   <div className="relative">
                     <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input id="fechaInicio" type="date" className="pl-9" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
+                    <Input id="fechaInicio" type="date" className="pl-9" max={fechaFin || undefined} value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} />
                   </div>
                 </div>
                 <span className="text-muted-foreground pt-4">-</span>
@@ -319,7 +277,7 @@ export default function ReportesPage() {
                   <Label htmlFor="fechaFin" className="text-xs text-muted-foreground">Fecha Fin</Label>
                   <div className="relative">
                     <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input id="fechaFin" type="date" className="pl-9" value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
+                    <Input id="fechaFin" type="date" className="pl-9" min={fechaInicio || undefined} value={fechaFin} onChange={e => setFechaFin(e.target.value)} />
                   </div>
                 </div>
               </div>
@@ -335,7 +293,7 @@ export default function ReportesPage() {
                     <p className="text-xs text-muted-foreground">Totales de ingresos, mora y cartera activa.</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-2 bg-muted/50 p-3 rounded-lg border">
                   <Checkbox id="cobros" checked={incluirCobros} onCheckedChange={(c) => setIncluirCobros(c as boolean)} />
                   <div className="grid gap-1.5 leading-none">
@@ -356,7 +314,7 @@ export default function ReportesPage() {
                   <Checkbox id="prestamos" checked={incluirPrestamos} onCheckedChange={(c) => setIncluirPrestamos(c as boolean)} />
                   <div className="grid gap-1.5 leading-none">
                     <label htmlFor="prestamos" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Listado de Préstamos</label>
-                    <p className="text-xs text-muted-foreground">Todos los créditos activos y su saldo restante.</p>
+                    <p className="text-xs text-muted-foreground">Historial completo de créditos y su saldo restante.</p>
                   </div>
                 </div>
               </div>
@@ -372,23 +330,23 @@ export default function ReportesPage() {
               <CardDescription>Descarga el consolidado en tu formato preferido.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button 
-                className="w-full h-14 text-base" 
+              <Button
+                className="w-full h-14 text-base"
                 onClick={generarPDF}
                 disabled={isGeneratingPDF || isGeneratingExcel || (!incluirResumen && !incluirCobros && !incluirMora && !incluirPrestamos)}
               >
                 {isGeneratingPDF ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FileText className="mr-2 h-5 w-5" />}
                 {isGeneratingPDF ? "Armando PDF..." : "Exportar en PDF"}
               </Button>
-              
+
               <div className="relative">
                 <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
                 <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">O alternativamente</span></div>
               </div>
 
-              <Button 
-                variant="outline" 
-                className="w-full h-14 text-base border-emerald-600/30 hover:bg-emerald-600/10 hover:text-emerald-700 dark:hover:text-emerald-400" 
+              <Button
+                variant="outline"
+                className="w-full h-14 text-base border-emerald-600/30 hover:bg-emerald-600/10 hover:text-emerald-700 dark:hover:text-emerald-400"
                 onClick={generarExcel}
                 disabled={isGeneratingPDF || isGeneratingExcel || (!incluirResumen && !incluirCobros && !incluirMora && !incluirPrestamos)}
               >

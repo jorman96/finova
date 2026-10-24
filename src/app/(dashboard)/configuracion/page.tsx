@@ -1,5 +1,7 @@
 "use client";
 
+import { ProfileForm } from '@/components/configuracion/ProfileForm';
+import Link from 'next/link';
 import { UserAccessDialog } from "@/components/configuracion/UserAccessDialog";
 
 import { useState, useEffect } from "react";
@@ -20,18 +22,21 @@ import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { InyeccionCapital, MovimientoBitacoraCapital } from "@/types";
 import { ResetValoresDialog } from "@/components/configuracion/ResetValoresDialog";
+import { LoadError } from '@/components/ListPagination';
 import { apiPost } from '@/lib/api-client';
 
 export default function ConfiguracionPage() {
   const { user, userData } = useAuth();
   const { theme, setTheme } = useTheme();
-  
+
   const [loading, setLoading] = useState(false);
   const [controlledCapital, setControlledCapital] = useState(false);
+  const [capitalReady, setCapitalReady] = useState(process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED !== 'true');
+  const [loadedEmpresaId, setLoadedEmpresaId] = useState(''), [empresaError, setEmpresaError] = useState('');
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED !== 'true') return;
     let active = true;
-    apiPost<{ enabled: boolean }>('/api/capital/summary', {}).then(v => { if (active) setControlledCapital(v.enabled); }).catch(() => {});
+    apiPost<{ enabled: boolean }>('/api/capital/summary', {}).then(v => { if (active) { setControlledCapital(v.enabled); setCapitalReady(true); } }).catch(() => { if (active) setEmpresaError('No se pudo comprobar el control de capital. Reintenta antes de modificar la configuración.'); });
     return () => { active = false; };
   }, [userData?.empresaId]);
   const [empresaData, setEmpresaData] = useState({
@@ -91,22 +96,22 @@ export default function ConfiguracionPage() {
       usuarioRol: userData?.rol || "dueño",
       inyeccionIdRef: inyeccionId
     };
-    
+
     // Save locally first to show in UI
     const updatedInyecciones = [...(empresaData.inyeccionesCapital || []), inyeccion];
     const updatedBitacora = [movimientoBitacora, ...(empresaData.bitacoraCapital || [])];
 
-    setEmpresaData(prev => ({ 
-      ...prev, 
+    setEmpresaData(prev => ({
+      ...prev,
       inyeccionesCapital: updatedInyecciones,
-      bitacoraCapital: updatedBitacora 
+      bitacoraCapital: updatedBitacora
     }));
-    
+
     // Save to Firestore immediately
     try {
       if (userData?.empresaId) {
         const { doc, setDoc } = await import("firebase/firestore");
-        await setDoc(doc(db, "empresas", userData.empresaId), { 
+        await setDoc(doc(db, "empresas", userData.empresaId), {
           inyeccionesCapital: updatedInyecciones,
           bitacoraCapital: updatedBitacora
         }, { merge: true });
@@ -115,7 +120,7 @@ export default function ConfiguracionPage() {
     } catch (e: any) {
       toast.error("Error al guardar inyección: " + e.message);
     }
-    
+
     setNuevaInyeccion({ monto: 0, observaciones: "" });
     setIsInyeccionModalOpen(false);
   };
@@ -127,7 +132,7 @@ export default function ConfiguracionPage() {
 
     try {
       const updatedInyecciones = (empresaData.inyeccionesCapital || []).filter(iny => iny.id !== inyeccionARevertir.id);
-      
+
       const motivoFinal = motivoReversion.trim() || `Reversión/Anulación de inyección de $${inyeccionARevertir.monto.toFixed(2)} (${inyeccionARevertir.observaciones})`;
 
       const movimientoBitacora: MovimientoBitacoraCapital = {
@@ -173,24 +178,24 @@ export default function ConfiguracionPage() {
     setEmpresaData(prev => ({ ...prev, cuentasBancarias: (prev.cuentasBancarias || []).filter(c => c.id !== id) }));
   };
 
-  // Cargar datos reales de la empresa si existen
+  // Never save placeholder defaults while the existing company is still loading.
   useEffect(() => {
-    if (userData?.empresaId) {
-      import("firebase/firestore").then(({ doc, getDoc }) => {
-        getDoc(doc(db, "empresas", userData.empresaId)).then((snap) => {
-          if (snap.exists()) {
-            setEmpresaData(prev => ({ ...prev, ...snap.data() }));
-          }
-        });
-      });
-    }
+    const empresaId = userData?.empresaId;
+    if (!empresaId) return;
+    let current = true;
+    import('firebase/firestore').then(async ({ doc, getDoc }) => {
+      const snap = await getDoc(doc(db, 'empresas', empresaId));
+      if (!snap.exists()) throw new Error('No se encuentra la financiera.');
+      if (current) { setEmpresaData(previous => ({ ...previous, ...snap.data() })); setLoadedEmpresaId(empresaId); }
+    }).catch(() => { if (current) setEmpresaError('No se pudo cargar la configuración. No se guardarán datos por defecto.'); });
+    return () => { current = false; };
   }, [userData?.empresaId]);
 
   const handleSaveEmpresa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userData?.empresaId) return;
+    if (!userData?.empresaId || loadedEmpresaId !== userData.empresaId || !capitalReady) return;
     setLoading(true);
-    
+
     try {
       const { doc, setDoc } = await import("firebase/firestore");
       let newLogoUrl = empresaData.logoUrl;
@@ -208,10 +213,9 @@ export default function ConfiguracionPage() {
         nombre: empresaData.nombre,
         ...(!controlledCapital ? { moneda: empresaData.moneda, capitalInicial: parseFloat(empresaData.capitalInicial.toString()) || 0, cuentasBancarias: empresaData.cuentasBancarias || [] } : {}),
         tasaMoraDefecto: empresaData.tasaMoraDefecto,
-        logoUrl: newLogoUrl,
-        estado: 'activa' // Por si acaso se está creando por primera vez
+        logoUrl: newLogoUrl
       }, { merge: true });
-      
+
       setEmpresaData(prev => ({ ...prev, logoUrl: newLogoUrl }));
       setLogoFile(null);
       toast.success("Configuración de empresa guardada");
@@ -222,6 +226,9 @@ export default function ConfiguracionPage() {
       setLoading(false);
     }
   };
+
+  if (empresaError) return <LoadError message={empresaError} />;
+  if (loadedEmpresaId !== userData?.empresaId || !capitalReady) return <p role="status">Consultando configuración de la financiera…</p>;
 
   return (
     <div className="space-y-6">
@@ -238,33 +245,9 @@ export default function ConfiguracionPage() {
           <TabsTrigger value="equipo">Equipo</TabsTrigger>
           <TabsTrigger value="sistema">Sistema</TabsTrigger>
         </TabsList>
-        
-        <TabsContent value="perfil" className="space-y-4 pt-4">
-          <Card className="max-w-2xl">
-            <CardHeader>
-              <CardTitle>Perfil del Usuario</CardTitle>
-              <CardDescription>Información de la cuenta de acceso actual.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Nombre</Label>
-                <Input value={userData?.nombre || "Usuario"} disabled />
-              </div>
-              <div className="space-y-2">
-                <Label>Correo Electrónico</Label>
-                <Input value={user?.email || "Usuario no identificado"} disabled />
-              </div>
-              <div className="space-y-2">
-                <Label>Rol Actual</Label>
-                <div className="flex">
-                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary ring-1 ring-inset ring-primary/20 uppercase">
-                    {userData?.rol || "desconocido"}
-                  </span>
-                </div>
-              </div>
-            </CardContent>
 
-          </Card>
+        <TabsContent value="perfil" className="space-y-4 pt-4">
+          <ProfileForm />
         </TabsContent>
 
         <TabsContent value="empresa" className="space-y-4 pt-4">
@@ -281,8 +264,8 @@ export default function ConfiguracionPage() {
                     {empresaData.logoUrl && (
                       <img src={empresaData.logoUrl} alt="Logo" className="w-16 h-16 object-contain rounded border" />
                     )}
-                    <Input 
-                      type="file" 
+                    <Input
+                      type="file"
                       accept="image/png, image/jpeg"
                       onChange={e => setLogoFile(e.target.files?.[0] || null)}
                       disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
@@ -293,18 +276,18 @@ export default function ConfiguracionPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Nombre de la Financiera</Label>
-                  <Input 
-                    value={empresaData.nombre} 
-                    onChange={e => setEmpresaData({...empresaData, nombre: e.target.value})} 
+                  <Input
+                    value={empresaData.nombre}
+                    onChange={e => setEmpresaData({...empresaData, nombre: e.target.value})}
                     disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Capital Inicial (Inversión Inicial)</Label>
-                  <Input 
+                  <Input
                     type="number"
-                    value={empresaData.capitalInicial} 
-                    onChange={e => setEmpresaData({...empresaData, capitalInicial: parseFloat(e.target.value) || 0})} 
+                    value={empresaData.capitalInicial}
+                    onChange={e => setEmpresaData({...empresaData, capitalInicial: parseFloat(e.target.value) || 0})}
                     disabled={controlledCapital || (userData?.rol !== 'dueño' && userData?.rol !== 'superadmin')}
                   />
                   <p className="text-xs text-muted-foreground">{controlledCapital ? 'El capital y sus fuentes están protegidos. Gestiona nuevos aportes y devoluciones desde Pagos de capital.' : 'Monto total con el que iniciaste el negocio originalmente.'}</p>
@@ -317,8 +300,9 @@ export default function ConfiguracionPage() {
                         <Label className="text-base font-bold">Gestión de Capital e Inyecciones</Label>
                         <p className="text-xs text-muted-foreground">Registra aportes, revierte errores y consulta la bitácora de auditoría.</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'} onClick={() => setIsInyeccionModalOpen(true)}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {controlledCapital && <Link className="rounded-lg border px-3 py-2 text-sm underline" href="/capital">Gestionar aportes en Pagos de capital</Link>}
+                        <Button size="sm" variant="outline" disabled={controlledCapital || userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'} onClick={() => setIsInyeccionModalOpen(true)}>
                           <Plus className="mr-2 h-4 w-4" /> Inyectar Capital
                         </Button>
                       </div>
@@ -332,19 +316,19 @@ export default function ConfiguracionPage() {
                           <div className="space-y-4 py-4">
                             <div className="space-y-2">
                               <Label>Monto a Inyectar ($)</Label>
-                              <Input 
-                                type="number" 
-                                placeholder="0.00" 
-                                value={nuevaInyeccion.monto || ""} 
-                                onChange={e => setNuevaInyeccion({...nuevaInyeccion, monto: parseFloat(e.target.value) || 0})} 
+                              <Input
+                                type="number"
+                                placeholder="0.00"
+                                value={nuevaInyeccion.monto || ""}
+                                onChange={e => setNuevaInyeccion({...nuevaInyeccion, monto: parseFloat(e.target.value) || 0})}
                               />
                             </div>
                             <div className="space-y-2">
                               <Label>Origen / Observaciones</Label>
-                              <Input 
-                                placeholder="Ej. Ahorros personales, Préstamo bancario..." 
-                                value={nuevaInyeccion.observaciones} 
-                                onChange={e => setNuevaInyeccion({...nuevaInyeccion, observaciones: e.target.value})} 
+                              <Input
+                                placeholder="Ej. Ahorros personales, Préstamo bancario..."
+                                value={nuevaInyeccion.observaciones}
+                                onChange={e => setNuevaInyeccion({...nuevaInyeccion, observaciones: e.target.value})}
                               />
                             </div>
                           </div>
@@ -385,7 +369,7 @@ export default function ConfiguracionPage() {
                               </div>
                               <div className="space-y-2">
                                 <Label htmlFor="motivo-reversion">Motivo de la Reversión (Auditoría) *</Label>
-                                <Input 
+                                <Input
                                   id="motivo-reversion"
                                   placeholder="Ej. Error al digitar monto por el administrador"
                                   value={motivoReversion}
@@ -399,8 +383,8 @@ export default function ConfiguracionPage() {
                           )}
                           <DialogFooter>
                             <Button variant="outline" onClick={() => setIsRevertModalOpen(false)}>Cancelar</Button>
-                            <Button 
-                              variant="destructive" 
+                            <Button
+                              variant="destructive"
                               disabled={isReverting}
                               onClick={handleConfirmarReversion}
                             >
@@ -508,8 +492,8 @@ export default function ConfiguracionPage() {
                                       {new Date(mov.fecha).toLocaleString()}
                                     </TableCell>
                                     <TableCell className="py-2">
-                                      <Badge 
-                                        variant={mov.tipo === 'inyeccion' ? 'default' : 'destructive'} 
+                                      <Badge
+                                        variant={mov.tipo === 'inyeccion' ? 'default' : 'destructive'}
                                         className={mov.tipo === 'inyeccion' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
                                       >
                                         {mov.tipo === 'inyeccion' ? '+ INYECCIÓN' : '- REVERSIÓN'}
@@ -539,20 +523,20 @@ export default function ConfiguracionPage() {
                     )}
                   </div>
                 )}
-                
+
                 {userData?.empresaId && (
                   <div className="pt-4 mt-4 border-t space-y-3">
                     <Label className="text-primary font-bold">Portal Público para Clientes</Label>
-                    <p className="text-xs text-muted-foreground">Comparte este enlace con tus clientes para que puedan consultar sus saldos y fechas de pago ingresando solo su cédula.</p>
+                    <p className="text-xs text-muted-foreground">Comparte este enlace con tus clientes para que puedan consultar sus saldos y fechas de pago con su cédula y un código enviado al correo registrado.</p>
                     <div className="flex items-center gap-2">
-                      <Input 
-                        readOnly 
-                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/portal/${userData.empresaId}`} 
+                      <Input
+                        readOnly
+                        value={`${typeof window !== 'undefined' ? window.location.origin : ''}/portal/${userData.empresaId}`}
                         className="bg-muted text-muted-foreground"
                       />
-                      <Button 
-                        type="button" 
-                        variant="secondary" 
+                      <Button
+                        type="button"
+                        variant="secondary"
                         onClick={() => {
                           navigator.clipboard.writeText(`${window.location.origin}/portal/${userData.empresaId}`);
                           toast.success("Enlace copiado al portapapeles");
@@ -565,11 +549,11 @@ export default function ConfiguracionPage() {
                 )}
                 <div className="space-y-2">
                   <Label>Moneda por Defecto</Label>
-                  <Input 
-                    value={empresaData.moneda} 
-                    onChange={e => setEmpresaData({...empresaData, moneda: e.target.value})} 
+                  <Input
+                    value={empresaData.moneda}
+                    onChange={e => setEmpresaData({...empresaData, moneda: e.target.value})}
                     placeholder="USD, EUR, MXN..."
-                    disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
+                    disabled={controlledCapital || userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
                   />
                 </div>
               </CardContent>
@@ -669,22 +653,22 @@ export default function ConfiguracionPage() {
                   <p className="text-sm text-muted-foreground">Elige cómo quieres que se vea Finova.</p>
                 </div>
                 <div className="flex gap-4">
-                  <Button 
-                    variant={theme === 'light' ? 'default' : 'outline'} 
+                  <Button
+                    variant={theme === 'light' ? 'default' : 'outline'}
                     onClick={() => setTheme('light')}
                     className="flex-1"
                   >
                     <Sun className="mr-2 h-4 w-4" /> Claro
                   </Button>
-                  <Button 
-                    variant={theme === 'dark' ? 'default' : 'outline'} 
+                  <Button
+                    variant={theme === 'dark' ? 'default' : 'outline'}
                     onClick={() => setTheme('dark')}
                     className="flex-1"
                   >
                     <Moon className="mr-2 h-4 w-4" /> Oscuro
                   </Button>
-                  <Button 
-                    variant={theme === 'system' ? 'default' : 'outline'} 
+                  <Button
+                    variant={theme === 'system' ? 'default' : 'outline'}
                     onClick={() => setTheme('system')}
                     className="flex-1"
                   >
@@ -725,7 +709,7 @@ function EquipoTab() {
   const { userData } = useAuth();
   const [miembros, setMiembros] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Nuevo Miembro
   const [isModalOpen, setIsModalOpen] = useState(false);
 

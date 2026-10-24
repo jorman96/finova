@@ -56,3 +56,7 @@ test('enabled capital companies cannot forge collections, allocations or control
   await assertFails(updateDoc(doc(db,'empresas','a'),{inyeccionesCapital:[]}));
  }
 });
+
+test('operational and laboratory records cannot be written directly from any browser role',async()=>{
+ for(const role of roles){const db=env.authenticatedContext(uid(role)).firestore();await assertFails(setDoc(doc(db,'operational_workspaces/a/tasks/forged'),{empresaId:'a',state:'resuelta'}));await assertFails(setDoc(doc(db,'accounting/a/savings/forged'),{balance:100000}));}
+});

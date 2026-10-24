@@ -44,29 +44,33 @@ function calcularTasaPorCuota(tasaInput: number, periodoTasa: string, frecuencia
 
 export function generateAmortizationTable(input: AmortizationInput): CuotaProyectada[] {
   const { monto, tasaInteres, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago, periodoTasa = 'mensual' } = input;
-  
+  if (!Number.isFinite(monto) || monto <= 0 || !Number.isSafeInteger(Math.round(monto * 100)) || Math.abs(monto * 100 - Math.round(monto * 100)) > 0.00001 || !Number.isFinite(tasaInteres) || tasaInteres < 0 || !Number.isInteger(numeroCuotas) || numeroCuotas < 1 || numeroCuotas > 200 || Math.round(monto * 100) < numeroCuotas || !/^\d{4}-\d{2}-\d{2}$/.test(fechaPrimerPago) || isNaN(parseISO(fechaPrimerPago).getTime())) throw new Error('Revisa monto, tasa, fecha y número de cuotas (1 a 200). El monto debe tener hasta dos decimales y cubrir al menos un centavo de capital por cuota.');
+
   const cuotas: CuotaProyectada[] = [];
-  let saldoActual = monto;
   let fechaActual = parseISO(fechaPrimerPago);
-  
+
   // Convertir la tasa nominal a la tasa efectiva decimal por periodo de cuota
   const tasaEfectivaDecimal = calcularTasaPorCuota(tasaInteres, periodoTasa, frecuenciaPago) / 100;
+  let remainingCents = Math.round(monto * 100);
+  const principalCents = remainingCents;
+  const cumulativePrincipal = (i: number) => Number((BigInt(principalCents) * BigInt(i) + BigInt(Math.floor(numeroCuotas / 2))) / BigInt(numeroCuotas));
 
   if (tipoInteres === 'fijo') {
     // Interés simple
     const interesPorCuota = monto * tasaEfectivaDecimal;
-    const capitalPorCuota = monto / numeroCuotas;
-    const cuotaFija = capitalPorCuota + interesPorCuota;
 
     for (let i = 1; i <= numeroCuotas; i++) {
-      saldoActual -= capitalPorCuota;
+      const capitalCents = cumulativePrincipal(i) - cumulativePrincipal(i - 1);
+      const interestCents = Math.round(interesPorCuota * 100);
+      if (!Number.isSafeInteger(interestCents) || !Number.isSafeInteger(capitalCents + interestCents)) throw new Error('Las condiciones exceden la precisión monetaria admitida.');
+      remainingCents -= capitalCents;
       cuotas.push({
         numeroCuota: i,
         fechaVencimiento: format(fechaActual, "yyyy-MM-dd"),
-        capital: Number(capitalPorCuota.toFixed(2)),
-        interes: Number(interesPorCuota.toFixed(2)),
-        totalCuota: Number(cuotaFija.toFixed(2)),
-        saldoPendiente: Number(Math.max(0, saldoActual).toFixed(2))
+        capital: capitalCents / 100,
+        interes: interestCents / 100,
+        totalCuota: (capitalCents + interestCents) / 100,
+        saldoPendiente: remainingCents / 100
       });
       fechaActual = getNextDate(fechaActual, frecuenciaPago);
     }
@@ -74,19 +78,21 @@ export function generateAmortizationTable(input: AmortizationInput): CuotaProyec
     // Sistema francés
     let cuotaFija = monto * (tasaEfectivaDecimal * Math.pow(1 + tasaEfectivaDecimal, numeroCuotas)) / (Math.pow(1 + tasaEfectivaDecimal, numeroCuotas) - 1);
     if (tasaEfectivaDecimal === 0) cuotaFija = monto / numeroCuotas;
+    if (!Number.isFinite(cuotaFija)) throw new Error('Las condiciones exceden los límites del simulador.');
 
     for (let i = 1; i <= numeroCuotas; i++) {
-      const interes = saldoActual * tasaEfectivaDecimal;
-      const capital = cuotaFija - interes;
-      saldoActual -= capital;
-      
+      const interestCents = Math.round(remainingCents * tasaEfectivaDecimal);
+      const capitalCents = tasaEfectivaDecimal === 0 ? cumulativePrincipal(i) - cumulativePrincipal(i - 1) : i === numeroCuotas ? remainingCents : Math.min(remainingCents, Math.max(0, Math.round(cuotaFija * 100) - interestCents));
+      if (!Number.isSafeInteger(interestCents) || !Number.isSafeInteger(capitalCents + interestCents) || capitalCents + interestCents <= 0) throw new Error('El monto y el plazo generan cuotas sin importe válido. Revisa las condiciones.');
+      remainingCents -= capitalCents;
+
       cuotas.push({
         numeroCuota: i,
         fechaVencimiento: format(fechaActual, "yyyy-MM-dd"),
-        capital: Number(capital.toFixed(2)),
-        interes: Number(interes.toFixed(2)),
-        totalCuota: Number(cuotaFija.toFixed(2)),
-        saldoPendiente: Number(Math.max(0, saldoActual).toFixed(2))
+        capital: capitalCents / 100,
+        interes: interestCents / 100,
+        totalCuota: (capitalCents + interestCents) / 100,
+        saldoPendiente: remainingCents / 100
       });
       fechaActual = getNextDate(fechaActual, frecuenciaPago);
     }

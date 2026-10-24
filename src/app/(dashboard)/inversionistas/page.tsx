@@ -11,18 +11,18 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { 
-  Landmark, 
-  Briefcase, 
-  DollarSign, 
-  TrendingUp, 
-  Calendar, 
-  Users, 
-  Clock, 
-  CheckCircle2, 
-  AlertCircle, 
-  Search, 
-  ArrowUpRight, 
+import {
+  Landmark,
+  Briefcase,
+  DollarSign,
+  TrendingUp,
+  Calendar,
+  Users,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Search,
+  ArrowUpRight,
   ExternalLink,
   Loader2,
   FileText
@@ -34,9 +34,13 @@ import { RegistrarPagoInversionistaDialog } from "@/components/inversionistas/Re
 import { format, isThisMonth, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
+import { LoadError } from '@/components/ListPagination';
+import { matchesText } from '@/lib/client-search';
+
 export default function InversionistasPage() {
   const { userData } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const [inversionistas, setInversionistas] = useState<Inversionista[]>([]);
   const [contratos, setContratos] = useState<InversionContrato[]>([]);
@@ -50,63 +54,17 @@ export default function InversionistasPage() {
   useEffect(() => {
     if (!userData?.empresaId) return;
 
-    setLoading(true);
-
-    const unsubInversionistas = onSnapshot(
-      query(collection(db, "inversionistas"), where("empresaId", "==", userData.empresaId)),
-      snap => {
-        const list: Inversionista[] = [];
-        snap.forEach(d => list.push({ id: d.id, ...d.data() } as Inversionista));
-        setInversionistas(list);
-      }
-    );
-
-    const unsubContratos = onSnapshot(
-      query(collection(db, "inversion_contratos"), where("empresaId", "==", userData.empresaId), orderBy("createdAt", "desc")),
-      snap => {
-        const list: InversionContrato[] = [];
-        snap.forEach(d => list.push({ id: d.id, ...d.data() } as InversionContrato));
-        setContratos(list);
-        setLoading(false);
-      },
-      err => {
-        // Fallback sin orderBy si falta índice
-        const unsubFallback = onSnapshot(
-          query(collection(db, "inversion_contratos"), where("empresaId", "==", userData.empresaId)),
-          s => {
-            const list: InversionContrato[] = [];
-            s.forEach(d => list.push({ id: d.id, ...d.data() } as InversionContrato));
-            setContratos(list);
-            setLoading(false);
-          }
-        );
-      }
-    );
-
-    const unsubCuotas = onSnapshot(
-      query(collection(db, "cuotas_inversionistas"), where("empresaId", "==", userData.empresaId)),
-      snap => {
-        const list: CuotaInversionista[] = [];
-        snap.forEach(d => list.push({ id: d.id, ...d.data() } as CuotaInversionista));
-        setCuotas(list);
-      }
-    );
-
-    const unsubPagos = onSnapshot(
-      query(collection(db, "pagos_inversionistas"), where("empresaId", "==", userData.empresaId)),
-      snap => {
-        const list: PagoInversionista[] = [];
-        snap.forEach(d => list.push({ id: d.id, ...d.data() } as PagoInversionista));
-        setPagos(list);
-      }
-    );
-
-    return () => {
-      unsubInversionistas();
-      unsubContratos();
-      unsubCuotas();
-      unsubPagos();
-    };
+    const ready = new Set<string>();
+    const mark = (key: string) => { ready.add(key); if (ready.size === 4) setLoading(false); };
+    const failed = () => { setLoadError('No se pudo consultar todo el fondeo. Reintenta antes de usar los saldos.'); setLoading(false); };
+    const empresaId = userData.empresaId;
+    const stops = [
+      onSnapshot(query(collection(db, 'inversionistas'), where('empresaId', '==', empresaId)), snap => { setInversionistas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Inversionista))); mark('personas'); }, failed),
+      onSnapshot(query(collection(db, 'inversion_contratos'), where('empresaId', '==', empresaId)), snap => { setContratos(snap.docs.map(d => ({ id: d.id, ...d.data() } as InversionContrato)).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))); mark('contratos'); }, failed),
+      onSnapshot(query(collection(db, 'cuotas_inversionistas'), where('empresaId', '==', empresaId)), snap => { setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as CuotaInversionista))); mark('cuotas'); }, failed),
+      onSnapshot(query(collection(db, 'pagos_inversionistas'), where('empresaId', '==', empresaId)), snap => { setPagos(snap.docs.map(d => ({ id: d.id, ...d.data() } as PagoInversionista))); mark('pagos'); }, failed),
+    ];
+    return () => stops.forEach(stop => stop());
   }, [userData?.empresaId]);
 
   // Cálculos consolidados para KPIs
@@ -136,7 +94,7 @@ export default function InversionistasPage() {
       }
     });
 
-    const compromisoMes = cuotasEsteMes.reduce((sum, c) => sum + (c.saldoRestante || (c.totalCuota - c.montoPagado)), 0);
+    const compromisoMes = cuotasEsteMes.reduce((sum, c) => sum + (c.saldoRestante ?? (c.totalCuota - (c.montoPagado || 0))), 0);
 
     return {
       totalCaptado,
@@ -152,8 +110,7 @@ export default function InversionistasPage() {
   // Filtrado de contratos
   const contratosFiltrados = useMemo(() => {
     return contratos.filter(c => {
-      const matchSearch = (c.inversionistaNombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          (c.inversionistaIdentificacion || "").includes(searchTerm);
+      const matchSearch = matchesText(`${c.inversionistaNombre || ""} ${c.inversionistaIdentificacion || ""}`, searchTerm);
       const matchEstado = filtroEstado === "todos" || c.estado === filtroEstado;
       return matchSearch && matchEstado;
     });
@@ -166,6 +123,7 @@ export default function InversionistasPage() {
       .sort((a, b) => (a.fechaVencimiento > b.fechaVencimiento ? 1 : -1));
   }, [cuotas]);
 
+  if (loadError) return <LoadError message={loadError} />;
   if (loading) {
     return (
       <div className="h-[60vh] flex flex-col items-center justify-center gap-3">
@@ -181,7 +139,7 @@ export default function InversionistasPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Landmark className="h-6 w-6 text-emerald-600" />
+            <Landmark className="h-6 w-6 text-foreground" />
             Inversionistas y Fondeo de Capital
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -196,7 +154,7 @@ export default function InversionistasPage() {
 
       {/* Tarjetas de Métricas (KPIs) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <Card className="bg-card shadow-sm border-l-4 border-l-blue-500">
+        <Card className="bg-card shadow-sm ">
           <CardHeader className="p-4 pb-2">
             <CardDescription className="text-xs uppercase font-semibold text-muted-foreground">Total Fondeo Captado</CardDescription>
             <CardTitle className="text-xl font-bold">
@@ -210,45 +168,45 @@ export default function InversionistasPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card shadow-sm border-l-4 border-l-emerald-500">
+        <Card className="bg-card shadow-sm ">
           <CardHeader className="p-4 pb-2">
-            <CardDescription className="text-xs uppercase font-semibold text-emerald-700 dark:text-emerald-400">
+            <CardDescription className="text-xs uppercase font-semibold text-foreground">
               Asignado a Cartera
             </CardDescription>
-            <CardTitle className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+            <CardTitle className="text-xl font-bold text-foreground">
               ${metrics.totalCartera.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
               <span>Fondo prestable activo</span>
-              <Badge variant="outline" className="text-[10px] text-emerald-600">
+              <Badge variant="outline" className="text-[10px] text-foreground">
                 {metrics.totalCaptado > 0 ? ((metrics.totalCartera / metrics.totalCaptado) * 100).toFixed(0) : 0}%
               </Badge>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card shadow-sm border-l-4 border-l-amber-500">
+        <Card className="bg-card shadow-sm ">
           <CardHeader className="p-4 pb-2">
-            <CardDescription className="text-xs uppercase font-semibold text-amber-700 dark:text-amber-400">
+            <CardDescription className="text-xs uppercase font-semibold text-foreground">
               Asignado a Otros Gastos
             </CardDescription>
-            <CardTitle className="text-xl font-bold text-amber-600 dark:text-amber-400">
+            <CardTitle className="text-xl font-bold text-foreground">
               ${metrics.totalOtros.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0">
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
               <span>Gastos / Operativo</span>
-              <Badge variant="outline" className="text-[10px] text-amber-600">
+              <Badge variant="outline" className="text-[10px] text-foreground">
                 {metrics.totalCaptado > 0 ? ((metrics.totalOtros / metrics.totalCaptado) * 100).toFixed(0) : 0}%
               </Badge>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-card shadow-sm border-l-4 border-l-indigo-500">
+        <Card className="bg-card shadow-sm ">
           <CardHeader className="p-4 pb-2">
             <CardDescription className="text-xs uppercase font-semibold text-muted-foreground">Por Devolver a Inversionistas</CardDescription>
             <CardTitle className="text-xl font-bold text-foreground">
@@ -262,12 +220,12 @@ export default function InversionistasPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card shadow-sm border-l-4 border-l-purple-500">
+        <Card className="bg-card shadow-sm ">
           <CardHeader className="p-4 pb-2">
-            <CardDescription className="text-xs uppercase font-semibold text-purple-700 dark:text-purple-400">
+            <CardDescription className="text-xs uppercase font-semibold text-foreground">
               Compromiso Este Mes
             </CardDescription>
-            <CardTitle className="text-xl font-bold text-purple-600 dark:text-purple-400">
+            <CardTitle className="text-xl font-bold text-foreground">
               ${metrics.compromisoMes.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </CardTitle>
           </CardHeader>
@@ -294,7 +252,7 @@ export default function InversionistasPage() {
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar inversionista..."
+                aria-label="Buscar fondeo por inversionista" placeholder="Nombre o identificación del inversionista"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 className="pl-8 text-xs"
@@ -345,7 +303,7 @@ export default function InversionistasPage() {
                 return (
                   <Card key={c.id} className="hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-amber-500 to-primary" />
-                    
+
                     <CardHeader className="p-4 pb-2">
                       <div className="flex justify-between items-start gap-2">
                         <div>
@@ -374,10 +332,10 @@ export default function InversionistasPage() {
                       {/* Desglose Cartera vs Otros */}
                       <div className="space-y-1">
                         <div className="flex justify-between text-[11px]">
-                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                          <span className="text-foreground font-medium">
                             Cartera: ${c.montoCartera.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({pctCartera}%)
                           </span>
-                          <span className="text-amber-600 dark:text-amber-400 font-medium">
+                          <span className="text-foreground font-medium">
                             Otros: ${c.montoOtros.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({pctOtros}%)
                           </span>
                         </div>
@@ -405,7 +363,7 @@ export default function InversionistasPage() {
 
                       {/* Próximo pago */}
                       {proximaCuota && (
-                        <div className="text-[11px] flex items-center justify-between p-2 rounded bg-purple-500/10 text-purple-700 dark:text-purple-300">
+                        <div className="text-[11px] flex items-center justify-between p-2 rounded bg-purple-500/10 text-foreground dark:text-purple-300">
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" /> Próx. Cuota #{proximaCuota.numeroCuota} ({proximaCuota.fechaVencimiento}):
                           </span>
@@ -492,7 +450,7 @@ export default function InversionistasPage() {
                           </TableCell>
                           <TableCell className="text-center">#{cu.numeroCuota}</TableCell>
                           <TableCell className="text-right">${cu.capital.toFixed(2)}</TableCell>
-                          <TableCell className="text-right text-emerald-600 dark:text-emerald-400 font-medium">
+                          <TableCell className="text-right text-foreground font-medium">
                             ${cu.interes.toFixed(2)}
                           </TableCell>
                           <TableCell className="text-right font-bold">${cu.totalCuota.toFixed(2)}</TableCell>
@@ -507,7 +465,7 @@ export default function InversionistasPage() {
                                 contrato={contrato}
                                 cuota={cu}
                                 triggerButton={
-                                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700">
+                                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-foreground hover:text-foreground">
                                     <DollarSign className="h-3 w-3" /> Pagar
                                   </Button>
                                 }
@@ -545,7 +503,7 @@ export default function InversionistasPage() {
                         <h4 className="font-bold text-sm text-foreground">{inv.nombres} {inv.apellidos}</h4>
                         <p className="text-muted-foreground text-[11px]">C.I./RUC: {inv.identificacion}</p>
                       </div>
-                      <Badge variant="outline" className="text-[10px] text-emerald-600">
+                      <Badge variant="outline" className="text-[10px] text-foreground">
                         {contratosInv.length} contrato{contratosInv.length !== 1 ? 's' : ''}
                       </Badge>
                     </div>
@@ -559,7 +517,7 @@ export default function InversionistasPage() {
                       </div>
                       <div>
                         <span className="text-muted-foreground block text-[10px]">Saldo Pendiente:</span>
-                        <span className="font-bold text-purple-600 dark:text-purple-400">
+                        <span className="font-bold text-foreground">
                           ${totalPendiente.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
@@ -584,7 +542,7 @@ export default function InversionistasPage() {
           <Card>
             <CardHeader className="p-4 pb-2">
               <CardTitle className="text-base font-bold flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <CheckCircle2 className="h-4 w-4 text-foreground" />
                 Historial de Liquidaciones a Inversionistas
               </CardTitle>
               <CardDescription className="text-xs">
@@ -619,7 +577,7 @@ export default function InversionistasPage() {
                           <TableCell className="font-medium">{fechaStr}</TableCell>
                           <TableCell className="font-semibold">{p.inversionistaNombre || "Inversionista"}</TableCell>
                           <TableCell className="text-center">{p.numeroCuota ? `#${p.numeroCuota}` : "Abono"}</TableCell>
-                          <TableCell className="text-right font-bold text-emerald-600 dark:text-emerald-400">
+                          <TableCell className="text-right font-bold text-foreground">
                             ${p.monto.toFixed(2)}
                           </TableCell>
                           <TableCell className="capitalize">{p.metodo} ({p.cuentaOrigen})</TableCell>

@@ -14,6 +14,12 @@ export async function POST(request: Request) {
       for await (const item of adminDb.collection(collection).where("empresaId", "==", actor.empresaId).stream()) { const doc = item as unknown as QueryDocumentSnapshot; list.push({ id: doc.id, ...doc.data() }); }
       result[collection] = list;
     }
+    const operational: Record<string, unknown[]> = {};
+    for (const name of ['tasks', 'operations']) {
+      operational[name] = [];
+      for await (const item of adminDb.doc('operational_workspaces/' + actor.empresaId).collection(name).stream()) { const record = item as unknown as QueryDocumentSnapshot; operational[name].push({ id: record.id, ...record.data() }); }
+    }
+    result.operational = operational;
     await adminDb.collection("auditoria").add({ empresaId: actor.empresaId, accion: "exportar_respaldo", usuarioId: actor.uid, fecha: new Date() });
     return NextResponse.json(result, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return apiError(error); }

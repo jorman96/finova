@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Search, DollarSign, FileText } from "lucide-react";
@@ -11,15 +11,20 @@ import { Pago } from "@/types";
 import { collection, query, orderBy, onSnapshot, getDocs, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
+import { useListFilter } from '@/hooks/use-list-filter';
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
+import { matchesText } from '@/lib/client-search';
+import { ListPagination, pageItems, LoadError } from '@/components/ListPagination';
+import { businessDate } from '@/lib/business-date';
 
 export default function PagosPage() {
   const { userData } = useAuth();
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [clientesMap, setClientesMap] = useState<Record<string, string>>({});
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useListFilter('receipts-search');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(''), [method, setMethod] = useListFilter('receipts-method', 'todos'), [from, setFrom] = useListFilter('receipts-from'), [until, setUntil] = useListFilter('receipts-until'), [page, setPage] = useState(0);
 
   useEffect(() => {
     if (!userData?.empresaId) return;
@@ -32,10 +37,10 @@ export default function PagosPage() {
         map[doc.id] = `${data.nombres} ${data.apellidos}`;
       });
       setClientesMap(map);
-    });
+    }).catch(() => setLoadError('No se pudieron cargar los nombres de clientes. Reintenta la consulta.'));
 
     const q = query(
-      collection(db, "pagos"), 
+      collection(db, "pagos"),
       where("empresaId", "==", userData.empresaId),
       orderBy("fecha", "desc")
     );
@@ -45,17 +50,17 @@ export default function PagosPage() {
       setLoading(false);
     }, (error) => {
       console.error("Error al obtener pagos en tiempo real:", error);
+      setLoadError('No se pudo cargar el historial de cobros. Los importes visibles pueden estar incompletos.');
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, [userData?.empresaId]);
 
-  const filteredPagos = pagos.filter(p => 
-    p.observaciones?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.metodo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.id.includes(searchTerm)
-  );
+  const filteredPagos = pagos.filter(p => {
+    const date = p.fechaStr || (p.fecha?.toDate ? businessDate(p.fecha.toDate()) : '');
+    return matchesText(`${p.clienteNombre || clientesMap[p.clienteId] || ''} ${p.observaciones || ''} ${p.metodo || ''} ${p.id}`, searchTerm) && (method === 'todos' || p.metodo === method) && (!from || date >= from) && (!until || date <= until);
+  });
 
   return (
     <div className="space-y-6">
@@ -66,19 +71,24 @@ export default function PagosPage() {
         </div>
       </div>
 
-      <div className="flex items-center space-x-2">
+      {loadError && <LoadError message={loadError} />}
+      <div className="flex flex-wrap items-end gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Buscar por observación o método..." 
-            className="pl-8" 
+          <Input
+            aria-label="Buscar cobros" placeholder="Cliente, recibo, método u observación"
+            className="pl-8"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => { setSearchTerm(e.target.value); setPage(0); }}
           />
         </div>
+        <select aria-label="Método de cobro" className="min-h-11 rounded-md border bg-background px-3 text-sm" value={method} onChange={e => { setMethod(e.target.value); setPage(0); }}><option value="todos">Todos los métodos</option><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="deposito">Depósito</option><option value="otro">Otro</option></select>
+        <label className="space-y-1 text-sm">Desde<Input type="date" value={from} max={until || undefined} onChange={e => { setFrom(e.target.value); setPage(0); }} /></label>
+        <label className="space-y-1 text-sm">Hasta<Input type="date" value={until} min={from || undefined} onChange={e => { setUntil(e.target.value); setPage(0); }} /></label>
       </div>
 
-      <div className="border rounded-md bg-card">
+      <div className="space-y-3 md:hidden">{loading ? <p role="status">Cargando cobros…</p> : !filteredPagos.length ? <p className="rounded-lg border border-dashed p-5 text-sm">{loadError ? 'No se pudo consultar el historial.' : 'No hay cobros que coincidan con los filtros.'}</p> : pageItems(filteredPagos, page).map(pago => <article key={pago.id} className="rounded-xl border bg-card p-4 space-y-3"><div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">{pago.clienteNombre || clientesMap[pago.clienteId] || 'Cliente por revisar'}</h3><strong>${pago.monto.toFixed(2)}</strong></div><p className="text-sm">{pago.fecha?.toDate ? businessDate(pago.fecha.toDate()) : pago.fechaStr || 'Fecha por revisar'} · {pago.metodo}</p><p className="text-xs break-all text-muted-foreground">Referencia: {pago.id}</p>{pago.observaciones && <p className="text-sm">{pago.observaciones}</p>}<Link className="inline-flex min-h-11 items-center rounded-lg border px-3 text-sm" href={'/prestamos/' + pago.prestamoId + '#recibo-' + pago.id}>Ver cobro y recibo</Link></article>)}</div>
+      <div className="hidden border rounded-md bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -104,7 +114,7 @@ export default function PagosPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredPagos.map((pago) => (
+              pageItems(filteredPagos, page).map((pago) => (
                 <TableRow key={pago.id}>
                   <TableCell className="font-medium">
                     {pago.fecha?.toDate ? pago.fecha.toDate().toLocaleDateString() : 'N/A'}
@@ -147,8 +157,8 @@ export default function PagosPage() {
                           </Button>
                         </Link>
                       )}
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="sm"
                         onClick={async () => {
                           const { generarReciboPago } = await import("@/lib/pdfGenerator");
@@ -182,6 +192,7 @@ export default function PagosPage() {
           </TableBody>
         </Table>
       </div>
+      {!loading && !loadError && <ListPagination total={filteredPagos.length} page={page} onPage={setPage} />}
     </div>
   );
 }

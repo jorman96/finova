@@ -2,7 +2,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { initializeApp, deleteApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
-const { amount, INITIAL_CAPITAL_ID, schedule, share, percentage, verifiedSplit, today, sourceDate } = require('../.test-build/capital/core.js');
+const { amount, INITIAL_CAPITAL_ID, schedule, share, percentage, verifiedSplit, previewReceipt, today, sourceDate } = require('../.test-build/capital/core.js');
 const { capitalService } = require('../.test-build/capital/service.js');
 let app, db, execute, n = 0;
 const command = (type, data = {}) => ({ key: crypto.randomUUID(), type, ...data });
@@ -164,4 +164,12 @@ test('zero or imprecise initial capital cannot become a repayment plan', async (
   await db.doc('empresas/' + f.actor.empresaId).update({ capitalInicial: 100.001 });
   await assert.rejects(plan(f, { injectionId: INITIAL_CAPITAL_ID }));
   assert.equal((await f.base.collection('agreements').get()).size, 0);
+});
+
+test('receipt preview respects zero-paid, verified partials and unknown legacy splits', () => {
+ const first={numeroCuota:1,capital:100,interes:20,totalCuota:120,montoPagado:0};
+ assert.deepEqual(previewReceipt([first],6000),{installments:[1],verified:true,capital:5000,interest:1000});
+ assert.deepEqual(previewReceipt([{...first,montoPagado:60,capitalCobradoCentavos:5000,interesCobradoCentavos:1000}],6000),{installments:[1],verified:true,capital:5000,interest:1000});
+ assert.equal(previewReceipt([{...first,montoPagado:60}],6000).verified,false);
+ assert.throws(()=>previewReceipt([first],12001));
 });

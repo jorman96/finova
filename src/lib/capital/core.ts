@@ -60,3 +60,20 @@ export function verifiedSplit(capital: number, interest: number, total: number, 
   const interestPaid = share(previousPaid + payment, interest, total) - share(previousPaid, interest, total);
   return { capital: payment - interestPaid, interest: interestPaid };
 }
+export function previewReceipt(rows: { numeroCuota: number; capital: number; interes: number; totalCuota: number; montoPagado?: number; capitalCobradoCentavos?: number; interesCobradoCentavos?: number }[], cents: number) {
+  positive(cents);
+  let rest = cents, interest = 0, verified = true;
+  const installments: number[] = [];
+  for (const row of [...rows].sort((a, b) => a.numeroCuota - b.numeroCuota)) {
+    if (!rest) break;
+    const total = amount(row.totalCuota), paid = amount(row.montoPagado || 0, true);
+    if (paid > total) throw new CapitalError('Cuota inconsistente.');
+    const take = Math.min(rest, total - paid);
+    if (!take) continue;
+    try { interest += verifiedSplit(amount(row.capital, true), amount(row.interes, true), total, paid, row.capitalCobradoCentavos, row.interesCobradoCentavos, take).interest; }
+    catch { verified = false; }
+    installments.push(row.numeroCuota); rest -= take;
+  }
+  if (rest) throw new CapitalError('El importe excede las cuotas pendientes.');
+  return { installments, verified, capital: verified ? cents - interest : null, interest: verified ? interest : null };
+}

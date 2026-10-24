@@ -195,7 +195,7 @@ export function RegistrarPagoInversionistaDialog({
             <div className="space-y-1.5">
               <Label>Método de Pago</Label>
               <Select value={metodoPago} onValueChange={(val) => setMetodoPago(val || "transferencia")}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Método de Pago">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

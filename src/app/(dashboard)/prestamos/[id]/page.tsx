@@ -13,7 +13,8 @@ import { useRouter } from "next/navigation";
 import { RegistrarPagoDialog } from "@/components/pagos/RegistrarPagoDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { LoadError } from "@/components/ListPagination";
+import { collectors } from "@/lib/permissions";
 
 export default function PrestamoDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -23,24 +24,27 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
   const [cuotas, setCuotas] = useState<Cuota[]>([]);
   const [pagos, setPagos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [lastReceipt, setLastReceipt] = useState<{ id: string; mail: 'pending' | 'accepted' } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     if (!id || !userData?.empresaId) return;
 
+    const ready = new Set<string>();
+    const mark = (name: string) => { ready.add(name); if (ready.size === 3) setLoading(false); };
+    const failed = () => { setLoadError('No se pudo cargar el detalle completo del crédito.'); setLoading(false); };
     const unsubPrestamo = onSnapshot(doc(db, "prestamos", id), (docSnap) => {
       if (docSnap.exists()) {
-        setPrestamo({ id: docSnap.id, ...docSnap.data() } as Prestamo);
+        setPrestamo({ id: docSnap.id, ...docSnap.data() } as Prestamo); mark("credito");
       } else {
         router.push("/prestamos");
       }
-    });
+    }, failed);
 
     const unsubCuotas = onSnapshot(query(collection(db, "cuotas"), where("empresaId", "==", userData.empresaId), where("prestamoId", "==", id)), (snap) => {
-      setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)).sort((a,b) => a.numeroCuota - b.numeroCuota));
-    });
+      setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)).sort((a,b) => a.numeroCuota - b.numeroCuota)); mark("cuotas");
+    }, failed);
 
     const unsubPagos = onSnapshot(query(collection(db, "pagos"), where("empresaId", "==", userData!.empresaId), where("prestamoId", "==", id)), (snap) => {
       const pagosData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -49,11 +53,10 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
         const dateB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha || 0);
         return dateB.getTime() - dateA.getTime();
       });
-      setPagos(pagosData);
-      setLoading(false);
+      setPagos(pagosData); mark("pagos");
     }, (error) => {
       console.error("Error al obtener pagos:", error);
-      setLoading(false);
+      failed();
     });
 
     return () => {
@@ -63,22 +66,21 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
     };
   }, [id, router, userData?.empresaId]);
 
-  const fetchData = () => {
-    // Ya no es necesario, pero mantenemos la función para no romper props
-  };
-
-  const handleDeletePrestamo = async () => { toast.info("El historial financiero está protegido. Los créditos no se borran."); };
-  const handleDeletePago = async (_pago: unknown) => { toast.info("Los reversos requieren revisión del historial. No se borran pagos."); };
-
+  const fetchData = (receiptId: string) => setLastReceipt({ id: receiptId, mail: 'pending' });
+  const receiptStatus = (receiptId: string, mail: 'pending' | 'accepted') => setLastReceipt(previous => previous?.id === receiptId ? { id: receiptId, mail } : previous);
+  if (loadError) return <LoadError message={loadError} />;
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando detalles del préstamo...</div>;
   if (!prestamo) return null;
 
   const cuotasPagadas = cuotas.filter(c => c.estado === 'pagada').length;
-  const porcentajePagado = (cuotasPagadas / prestamo.numeroCuotas) * 100;
+  const totalCuotas = prestamo.numeroCuotas || cuotas.length;
+  const porcentajePagado = totalCuotas > 0 ? Math.min(100, (cuotasPagadas / totalCuotas) * 100) : 0;
 
   return (
     <div className="space-y-6">
+      {lastReceipt && <div role="status" className="rounded-xl border bg-card p-4 text-sm space-y-2"><p className="font-semibold">Cobro guardado · Referencia {lastReceipt.id}</p><p>{lastReceipt.mail === 'accepted' ? 'La solicitud de correo fue aceptada. Su entrega depende del proveedor.' : 'El correo está pendiente o no pudo enviarse. El cobro ya está registrado; no lo registres nuevamente.'}</p><a className="underline" href={'#recibo-' + lastReceipt.id}>Consultar recibo en el historial</a></div>}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/prestamos">
@@ -97,15 +99,15 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           </div>
         </div>
         <div className="flex flex-wrap gap-2 sm:justify-end">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={async () => {
               try {
                 const { generarContratoPrestamo } = await import("@/lib/pdfGenerator");
                 const { getDoc, doc } = await import("firebase/firestore");
                 const empresaSnap = await getDoc(doc(db, "empresas", prestamo.empresaId));
                 const clienteSnap = await getDoc(doc(db, "clientes", prestamo.clienteId));
-                
+
                 const prestamoFormatted = {
                   ...prestamo,
                   id: prestamo.id,
@@ -131,14 +133,10 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           >
             <FileText className="mr-2 h-4 w-4" /> Imprimir Contrato
           </Button>
-          {prestamo.estado !== 'completado' && (
-            <RegistrarPagoDialog prestamo={prestamo} cuotas={cuotas} onPagoRegistrado={fetchData} />
+          {prestamo.estado !== 'completado' && userData && collectors.includes(userData.rol) && (
+            <RegistrarPagoDialog prestamo={prestamo} cuotas={cuotas} onPagoRegistrado={fetchData} onReceiptStatus={receiptStatus} />
           )}
-          {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
-            <Button variant="outline" disabled title="El historial financiero está protegido" onClick={() => setDeleteModalOpen(true)}>
-              <Trash2 className="mr-2 h-4 w-4" /> Eliminar Crédito
-            </Button>
-          )}
+
         </div>
       </div>
 
@@ -172,10 +170,10 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
               <span className="text-muted-foreground text-sm">Saldo Restante</span>
               <span className="font-bold text-primary">${prestamo.saldoRestante.toFixed(2)}</span>
             </div>
-            
+
             <div className="pt-4">
               <div className="flex justify-between text-sm mb-2">
-                <span>Progreso ({cuotasPagadas}/{prestamo.numeroCuotas})</span>
+                <span>Progreso ({cuotasPagadas}/{totalCuotas})</span>
                 <span>{porcentajePagado.toFixed(0)}%</span>
               </div>
               <div className="w-full bg-secondary rounded-full h-2.5">
@@ -236,7 +234,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             <CardDescription>Registro de abonos y comprobantes.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="border rounded-md overflow-y-auto max-h-[400px] bg-card/50">
+            <div className="border rounded-md overflow-auto max-h-[400px] bg-card/50">
               <table className="w-full text-sm text-left relative">
                 <thead className="bg-muted sticky top-0 z-10 shadow-sm">
                   <tr>
@@ -251,7 +249,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
                   {pagos.length === 0 ? (
                     <tr><td colSpan={5} className="p-4 text-center text-muted-foreground">No hay pagos registrados.</td></tr>
                   ) : pagos.map(p => (
-                    <tr key={p.id} className="border-t hover:bg-muted/50">
+                    <tr key={p.id} id={"recibo-" + p.id} className="border-t hover:bg-muted/50 target:bg-muted">
                       <td className="p-3">{p.fecha?.toDate ? new Date(p.fecha.toDate()).toLocaleString() : 'N/A'}</td>
                       <td className="p-3 font-bold text-green-600">${p.monto.toFixed(2)}</td>
                       <td className="p-3 capitalize">{p.metodo || p.metodoPago || 'Efectivo'}</td>
@@ -264,16 +262,12 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
                             const clienteSnap = await getDoc(doc(db, "clientes", prestamo.clienteId));
                             await generarReciboPago({ ...p, fecha: p.fecha?.toDate ? p.fecha.toDate().toISOString() : new Date().toISOString() }, prestamo, clienteSnap.data(), empresaSnap.data());
                           } catch (e) {
-                            console.error(e);
+                            console.error(e); toast.error("No se pudo generar el recibo. El cobro permanece registrado.");
                           }
                         }}>
                           <FileText className="h-4 w-4 mr-2" /> Recibo
                         </Button>
-                        {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
-                          <Button size="sm" variant="outline" disabled title="Los reversos requieren conciliación del historial" onClick={() => handleDeletePago(p)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
+
                       </td>
                     </tr>
                   ))}
@@ -284,23 +278,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
         </Card>
       </div>
 
-      <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-destructive">¿Eliminar este préstamo por completo?</DialogTitle>
-            <DialogDescription>
-              Esta acción es <strong>irreversible</strong>. Se eliminará el préstamo, junto con todas sus cuotas y cualquier pago registrado, desapareciendo del sistema por completo. Úselo solo para corregir créditos creados por error.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={() => setDeleteModalOpen(false)} disabled={isDeleting}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDeletePrestamo} disabled={isDeleting}>
-              {isDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
-              Sí, eliminar definitivamente
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <details className="rounded-lg border bg-card p-4 text-sm"><summary className="cursor-pointer font-medium">Correcciones del historial financiero</summary><p className="mt-3 text-muted-foreground">Los créditos y cobros se conservan. Para corregir un registro, crea una gestión administrativa y adjunta la referencia; los reversos requieren revisión y conciliación.</p><Link className="mt-3 inline-block underline" href={'/gestion?cliente=' + prestamo.clienteId}>Crear gestión de revisión</Link></details>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { apiPost } from "@/lib/api-client";
 import type { Cliente } from "@/types";
+import { Trash2 } from "lucide-react";
 
 export function EliminarClienteDialog({ cliente, onDeleted }: { cliente: Cliente; onDeleted: () => void }) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
@@ -17,7 +18,7 @@ export function EliminarClienteDialog({ cliente, onDeleted }: { cliente: Cliente
     finally { setBusy(false); }
   }
   return <Dialog open={open} onOpenChange={next => { if (!busy) setOpen(next); }}>
-    <DialogTrigger render={<Button variant="ghost" size="sm" className="text-destructive" />}>Eliminar</DialogTrigger>
+    <DialogTrigger render={<Button variant="ghost" size="icon" className="size-11 text-destructive" title="Eliminar cliente" aria-label={`Eliminar a ${cliente.nombres} ${cliente.apellidos}`} />}><Trash2 className="size-4" aria-hidden="true" /></DialogTrigger>
     <DialogContent><DialogHeader><DialogTitle>Eliminar cliente</DialogTitle>
       <DialogDescription>Vas a eliminar a {cliente.nombres} {cliente.apellidos} (cédula {cliente.cedula}). Esta acción no se puede deshacer. Solo se permite si no tiene créditos, cuotas ni pagos registrados. Los documentos almacenados se conservan para su revisión administrativa.</DialogDescription>
     </DialogHeader><DialogFooter>

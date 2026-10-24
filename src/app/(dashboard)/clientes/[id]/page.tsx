@@ -16,6 +16,11 @@ import { uploadFileToStorage } from "@/lib/storage";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { ScoreGauge } from "@/components/clientes/ScoreGauge";
+import { EditarClienteDialog } from '@/components/clientes/EditarClienteDialog';
+import { NuevoPrestamoDialog } from '@/components/prestamos/NuevoPrestamoDialog';
+import { managers } from '@/lib/permissions';
+import { apiPost } from '@/lib/api-client';
+import { LoadError } from '@/components/ListPagination';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 
 export default function ClienteDetallePage({ params }: { params: Promise<{ id: string }> }) {
@@ -29,16 +34,18 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
   const [uploadProgress, setUploadProgress] = useState(0);
   const [openScoreDialog, setOpenScoreDialog] = useState(false);
   const [newScore, setNewScore] = useState(50);
+  const [scoreReason, setScoreReason] = useState(''), [scoreBusy, setScoreBusy] = useState(false), [loadError, setLoadError] = useState('');
   const router = useRouter();
 
   const handleUpdateScore = async () => {
+    if (!Number.isInteger(newScore) || newScore < 0 || newScore > 100 || scoreReason.trim().length < 10) { toast.error('Indica un valor entero entre 0 y 100 y un motivo de al menos 10 caracteres.'); return; }
+    setScoreBusy(true);
     try {
-      await updateDoc(doc(db, "clientes", id), { score: newScore });
+      await apiPost('/api/clientes/score', { clienteId: id, score: newScore, motivo: scoreReason });
       toast.success("Score actualizado correctamente");
       setOpenScoreDialog(false);
-    } catch (error) {
-      toast.error("Error al actualizar el score");
-    }
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo guardar el indicador.'); }
+    finally { setScoreBusy(false); }
   };
 
   useEffect(() => {
@@ -53,13 +60,14 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
       setLoading(false);
     }, (error) => {
       console.error(error);
+      setLoadError('No se pudo cargar el expediente del cliente.');
       setLoading(false);
     });
 
     const qPrestamos = query(collection(db, "prestamos"), where("empresaId", "==", userData.empresaId), where("clienteId", "==", id));
     const unsubscribePrestamos = onSnapshot(qPrestamos, (snap) => {
       setPrestamos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    }, () => setLoadError('No se pudo cargar el historial de créditos. El resumen puede estar incompleto.'));
 
     return () => {
       unsubscribeCliente();
@@ -100,10 +108,11 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
   };
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando perfil del cliente...</div>;
-  if (!cliente) return null;
+  if (!cliente) return loadError ? <LoadError message={loadError} /> : null;
 
   return (
     <div className="space-y-6">
+      {loadError && <LoadError message={loadError} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/clientes">
@@ -122,8 +131,9 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline"><Edit className="mr-2 h-4 w-4" /> Editar Perfil</Button>
-          <Button><CreditCard className="mr-2 h-4 w-4" /> Nuevo Préstamo</Button>
+          {userData && ['superadmin','dueño','admin','cajero'].includes(userData.rol) && <EditarClienteDialog cliente={cliente} standalone />}
+          {userData && managers.includes(userData.rol) && <NuevoPrestamoDialog initialClienteId={cliente.id} />}
+          {userData?.rol !== 'consulta' && <Link className="inline-flex min-h-11 items-center rounded-lg border px-3 text-sm" href={'/gestion?cliente=' + cliente.id}>Crear gestión</Link>}
         </div>
       </div>
 
@@ -153,40 +163,44 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-center">Score Crediticio</CardTitle>
+              <CardTitle className="text-center">Indicador interno de pago</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center space-y-4 pt-2">
-              <ScoreGauge score={cliente.score || 50} />
-              
-              <Dialog open={openScoreDialog} onOpenChange={setOpenScoreDialog}>
-                <DialogTrigger render={<Button variant="outline" size="sm" className="w-full mt-2">Ajustar Score Manual</Button>} />
+              {cliente.score == null ? <p className="text-muted-foreground">Sin evaluar</p> : <ScoreGauge score={cliente.score} />}
+              <p className="text-xs text-center text-muted-foreground">Valoración interna de 0 a 100. No corresponde a un buró de crédito.</p>
+              {cliente.scoreRevision && <div className="w-full rounded-lg bg-muted p-3 text-xs"><p>Última revisión: {cliente.scoreRevision.usuarioNombre} · {new Date(cliente.scoreRevision.fecha).toLocaleDateString('es-EC')}</p><p className="mt-1">{cliente.scoreRevision.motivo}</p></div>}
+
+              {userData && managers.includes(userData.rol) && <Dialog open={openScoreDialog} onOpenChange={open => { if (!scoreBusy) { if (open) { setNewScore(cliente.score ?? 50); setScoreReason(''); } setOpenScoreDialog(open); } }}>
+                <DialogTrigger render={<Button variant="outline" size="sm" className="w-full mt-2">Revisar indicador</Button>} />
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Ajustar Score Crediticio</DialogTitle>
+                    <DialogTitle>Revisar indicador interno</DialogTitle>
                     <DialogDescription>
-                      Modifica manualmente el puntaje de este cliente (0-100). Útil si tienes información externa.
+                      Registra una valoración de 0 a 100 y su fundamento. La revisión quedará en la auditoría de la financiera.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="flex items-center gap-4">
-                      <Input 
-                        type="number" 
-                        min="0" max="100" 
-                        value={newScore} 
+                      <Input
+                        type="number"
+                        aria-label="Indicador de 0 a 100"
+                        min="0" max="100"
+                        value={newScore}
                         onChange={(e) => setNewScore(Number(e.target.value))}
                         className="text-center text-2xl font-bold h-14"
                       />
                     </div>
+                    <label className="block space-y-2 text-sm">Motivo de la revisión<Input value={scoreReason} maxLength={500} onChange={e => setScoreReason(e.target.value)} placeholder="Explica el fundamento de esta valoración" /></label>
                   </div>
                   <DialogFooter>
-                    <Button variant="outline" onClick={() => setOpenScoreDialog(false)}>Cancelar</Button>
-                    <Button onClick={handleUpdateScore}>Guardar Score</Button>
+                    <Button variant="outline" disabled={scoreBusy} onClick={() => setOpenScoreDialog(false)}>Cancelar</Button>
+                    <Button disabled={scoreBusy || scoreReason.trim().length < 10} onClick={handleUpdateScore}>{scoreBusy ? 'Guardando…' : 'Guardar revisión'}</Button>
                   </DialogFooter>
                 </DialogContent>
-              </Dialog>
+              </Dialog>}
             </CardContent>
           </Card>
 
@@ -219,7 +233,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
               <TabsTrigger value="perfil">Perfil Completo</TabsTrigger>
               <TabsTrigger value="documentos">Documentos</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="prestamos" className="mt-6 space-y-4">
               {prestamos.length === 0 ? (
                 <Card>
@@ -301,7 +315,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
                   <CardDescription>Gestión de cédula, comprobantes de domicilio y otros documentos.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  
+
                   <div className="flex items-center gap-4 p-4 border-2 border-dashed rounded-lg bg-muted/20">
                     <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
                       <UploadCloud className="h-6 w-6 text-primary" />
@@ -316,10 +330,10 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
                       )}
                     </div>
                     <div>
-                      <Input 
-                        type="file" 
-                        onChange={handleFileUpload} 
-                        disabled={uploading} 
+                      <Input
+                        type="file"
+                        onChange={handleFileUpload}
+                        disabled={uploading}
                         className="max-w-[200px]"
                         accept=".pdf,.jpg,.jpeg,.png"
                       />

@@ -1,86 +1,53 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Eye, Phone } from "lucide-react";
-import { collection, query, where, onSnapshot, getDocs } from "firebase/firestore";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import Link from "next/link";
 import { Cuota, Prestamo, Cliente } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
 
+import { useCompany, useBusinessDay } from '@/hooks/use-company';
+import { isOverdue, daysOverdue } from '@/lib/business-date';
+import { ListPagination, pageItems, LoadError } from '@/components/ListPagination';
+import { matchesClient } from '@/lib/client-search';
+import { Input } from '@/components/ui/input';
+
 export default function MoraPage() {
   const { userData } = useAuth();
-  const [moraItems, setMoraItems] = useState<{cuota: Cuota, prestamo: Prestamo, cliente: Cliente, diasAtraso: number}[]>([]);
-  const [loading, setLoading] = useState(true);
-
+  const company = useCompany();
+  const day = useBusinessDay(company?.zonaHoraria);
+  const [sources, setSources] = useState<{ cuotas: Cuota[]; prestamos: Prestamo[]; clientes: Cliente[]; ready: string[] }>({ cuotas: [], prestamos: [], clientes: [], ready: [] });
+  const [loadError, setLoadError] = useState(''), [search, setSearch] = useState(''), [bucket, setBucket] = useState('todos'), [page, setPage] = useState(0);
+  const empresaId = userData?.empresaId;
   useEffect(() => {
-    if (!userData?.empresaId) return;
-
-    const qCuotas = query(
-      collection(db, "cuotas"), 
-      where("empresaId", "==", userData.empresaId),
-      where("estado", "in", ["pendiente", "vencida", "parcial"])
-    );
-    
-    const unsubscribe = onSnapshot(qCuotas, async (snapshot) => {
-      setLoading(true);
-      try {
-        const todayStr = new Date().toISOString().split("T")[0];
-        const vencidas = snapshot.docs
-          .map(d => ({ id: d.id, ...d.data() } as Cuota))
-          .filter(c => c.fechaVencimiento < todayStr);
-
-        const prestamosIds = [...new Set(vencidas.map(c => c.prestamoId))];
-        const prestamosMap = new Map<string, Prestamo>();
-        const clientesMap = new Map<string, Cliente>();
-
-        // Optimizamos obteniendo todos los prestamos y clientes de los IDs necesarios
-        for (const pid of prestamosIds) {
-           const pSnap = await getDocs(query(collection(db, "prestamos"), where("empresaId", "==", userData.empresaId))); 
-           const pDoc = pSnap.docs.find(d => d.id === pid);
-           if (pDoc) {
-             const prestamo = { id: pDoc.id, ...pDoc.data() } as Prestamo;
-             prestamosMap.set(pid, prestamo);
-             
-             if (!clientesMap.has(prestamo.clienteId)) {
-                const cSnap = await getDocs(query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId))); 
-                const cDoc = cSnap.docs.find(d => d.id === prestamo.clienteId);
-                if (cDoc) {
-                  clientesMap.set(prestamo.clienteId, { id: cDoc.id, ...cDoc.data() } as Cliente);
-                }
-             }
-           }
-        }
-
-        const items = vencidas.map(cuota => {
-          const prestamo = prestamosMap.get(cuota.prestamoId)!;
-          const cliente = clientesMap.get(cuota.clienteId)!;
-          
-          if (!prestamo || !cliente) return null;
-
-          const vDate = new Date(cuota.fechaVencimiento);
-          const tDate = new Date();
-          const diasAtraso = Math.floor((tDate.getTime() - vDate.getTime()) / (1000 * 3600 * 24));
-          
-          return { cuota, prestamo, cliente, diasAtraso };
-        }).filter(Boolean) as {cuota: Cuota, prestamo: Prestamo, cliente: Cliente, diasAtraso: number}[];
-
-        items.sort((a, b) => b.diasAtraso - a.diasAtraso);
-        setMoraItems(items);
-      } catch (error) {
-        console.error("Error procesando mora:", error);
-      } finally {
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
+    if (!empresaId) return;
+    let active = true;
+    const stops = (['cuotas', 'prestamos', 'clientes'] as const).map(name => onSnapshot(query(collection(db, name), where('empresaId', '==', empresaId)), snap => {
+      if (!active) return;
+      setSources(previous => ({ ...previous, [name]: snap.docs.map(d => ({ id: d.id, ...d.data() })), ready: [...new Set([...previous.ready, name])] }));
+    }, () => { if (active) setLoadError('No se pudo consultar la cartera completa. Reintenta antes de gestionar la mora.'); }));
+    return () => { active = false; stops.forEach(stop => stop()); };
+  }, [empresaId]);
+  const loading = sources.ready.length !== 3;
+  const moraItems = useMemo(() => {
+    const loans = new Map(sources.prestamos.map(p => [p.id, p]));
+    const clients = new Map(sources.clientes.map(c => [c.id, c]));
+    return sources.cuotas.filter(c => isOverdue(c, day)).flatMap(cuota => {
+      const prestamo = loans.get(cuota.prestamoId), cliente = clients.get(cuota.clienteId);
+      if (!prestamo || !cliente) return [];
+      return [{ cuota, prestamo, cliente, diasAtraso: daysOverdue(cuota.fechaVencimiento, day) }];
+    }).sort((a, b) => b.diasAtraso - a.diasAtraso);
+  }, [sources, day]);
+  const visible = moraItems.filter(item => matchesClient(item.cliente, search) && (bucket === 'todos' || (bucket === '1-7' ? item.diasAtraso <= 7 : bucket === '8-30' ? item.diasAtraso > 7 && item.diasAtraso <= 30 : item.diasAtraso > 30)));
+  const clientsInArrears = new Set(moraItems.map(i => i.cliente.id)).size;
+  const balance = moraItems.reduce((sum, i) => sum + Math.max(0, Math.round(i.cuota.totalCuota * 100) - Math.round((i.cuota.montoPagado || 0) * 100)), 0) / 100;
 
   return (
     <div className="space-y-6">
@@ -92,6 +59,9 @@ export default function MoraPage() {
         <p className="text-muted-foreground">Listado de clientes con cuotas vencidas y alertas de atraso.</p>
       </div>
 
+      {loadError && <LoadError message={loadError} />}
+      <p className="text-sm text-muted-foreground">Corte operativo: {day} · {clientsInArrears} clientes · Saldo vencido ${balance.toFixed(2)}</p>
+      <div className="flex flex-wrap gap-3"><Input aria-label="Buscar cartera vencida" className="max-w-sm" placeholder="Cliente, cédula o teléfono" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} /><select aria-label="Tramo de atraso" className="min-h-11 rounded-md border bg-background px-3 text-sm" value={bucket} onChange={e => { setBucket(e.target.value); setPage(0); }}><option value="todos">Todos los atrasos</option><option value="1-7">1 a 7 días</option><option value="8-30">8 a 30 días</option><option value="31+">Más de 30 días</option></select></div>
       <div className="border rounded-md bg-card">
         <Table>
           <TableHeader>
@@ -111,14 +81,14 @@ export default function MoraPage() {
                   Calculando morosidad...
                 </TableCell>
               </TableRow>
-            ) : moraItems.length === 0 ? (
+            ) : visible.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  No hay clientes en estado de mora. ¡Excelente!
+                  {loadError ? 'La consulta está incompleta.' : 'No hay cuotas vencidas que coincidan con los filtros.'}
                 </TableCell>
               </TableRow>
             ) : (
-              moraItems.map((item, index) => (
+              pageItems(visible, page).map((item, index) => (
                 <TableRow key={index} className="bg-destructive/5">
                   <TableCell className="font-medium">
                     {item.cliente.nombres} {item.cliente.apellidos}
@@ -133,7 +103,7 @@ export default function MoraPage() {
                     <span className="text-xs text-muted-foreground">{item.cuota.fechaVencimiento}</span>
                   </TableCell>
                   <TableCell className="font-bold text-destructive">
-                    ${(item.cuota.totalCuota - item.cuota.montoPagado).toFixed(2)}
+                    ${(item.cuota.totalCuota - (item.cuota.montoPagado || 0)).toFixed(2)}
                   </TableCell>
                   <TableCell>
                     <Badge variant={item.diasAtraso > 7 ? 'destructive' : 'outline'} className={item.diasAtraso > 7 ? '' : 'text-amber-600 border-amber-600'}>
@@ -153,6 +123,7 @@ export default function MoraPage() {
           </TableBody>
         </Table>
       </div>
+      {!loading && !loadError && <ListPagination total={visible.length} page={page} onPage={setPage} />}
     </div>
   );
 }

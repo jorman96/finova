@@ -7,7 +7,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 assert.ok(process.env.FIRESTORE_EMULATOR_HOST && process.env.FIREBASE_AUTH_EMULATOR_HOST);
 const project='demo-finova';initializeApp({projectId:project});const db=getFirestore(),auth=getAuth();
-const child=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--webpack','-p','3110'],{env:{...process.env,NEXT_PUBLIC_FIREBASE_PROJECT_ID:project,NEXT_PUBLIC_FIREBASE_API_KEY:'fake',NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:project+'.firebaseapp.com',NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:project+'.appspot.com',NEXT_PUBLIC_FIREBASE_APP_ID:'fake',FIREBASE_CLIENT_EMAIL:'',FIREBASE_PRIVATE_KEY:'',RESEND_API_KEY:''},stdio:['ignore','pipe','pipe'],windowsHide:true});
+const child=spawn(process.execPath,['node_modules/next/dist/bin/next','dev','--webpack','-p','3110'],{env:{...process.env,NEXT_PUBLIC_FIREBASE_PROJECT_ID:project,NEXT_PUBLIC_FIREBASE_API_KEY:'fake',NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:project+'.firebaseapp.com',NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:project+'.appspot.com',NEXT_PUBLIC_FIREBASE_APP_ID:'fake',FIREBASE_CLIENT_EMAIL:'',FIREBASE_PRIVATE_KEY:'',RESEND_API_KEY:'',FINOVA_ACCOUNTING_WORKBENCH_ENABLED:''},stdio:['ignore','pipe','pipe'],windowsHide:true});
 let logs='';child.stdout.on('data',d=>logs=(logs+d).slice(-9000));child.stderr.on('data',d=>logs=(logs+d).slice(-9000));
 async function post(body,token){return fetch('http://127.0.0.1:3110/api/clientes/eliminar',{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)});}
 async function user(uid,rol,empresaId,activo){await auth.createUser({uid,email:uid+'@example.test',password:'Test123456!'});await db.collection('usuarios').doc(uid).set({rol,empresaId,nombre:uid,...(activo===undefined?{}:{activo})});const r=await fetch('http://'+process.env.FIREBASE_AUTH_EMULATOR_HOST+'/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:uid+'@example.test',password:'Test123456!',returnSecureToken:true})});return(await r.json()).idToken;}
@@ -55,5 +55,43 @@ try{
  assert.equal((await fetch(portalUrl,{headers:{cookie}})).status,200);count++;
  assert.equal((await api('/api/portal/login',{action:'verify',challenge,code})).status,401);count++;
  const logout=await fetch('http://127.0.0.1:3110/api/portal/logout',{method:'POST',headers:{cookie}});assert.equal(logout.status,200);assert.equal((await fetch(portalUrl,{headers:{cookie},redirect:'manual'})).status,307);count++;console.log('PASS portal requires a one-time code, secure session and real logout');
+ // Operational UX endpoints: authorization, value zero, audit and profile preservation.
+ await db.doc('clientes/scored').set({empresaId:'a',nombres:'Ficticio',score:75});
+ const review={clienteId:'scored',score:0,motivo:'Revisión documentada del indicador interno'};
+ for(const [token,body,want] of [[null,review,401],[cashier,review,403],[other,review,403],[owner,{...review,score:101},400],[owner,{...review,motivo:'corto'},400],[owner,review,200]]) { const r=await api('/api/clientes/score',body,token);assert.equal(r.status,want,await r.text());count++; }
+ assert.equal((await db.doc('clientes/scored').get()).data().score,0);
+ assert.equal((await db.collection('auditoria').where('accion','==','ajustar_indicador_cliente').get()).size,1);count++;
+ const selfBefore=(await db.doc('usuarios/cashier').get()).data();
+ assert.equal((await api('/api/perfil',{nombres:'Carlos Andrés',apellidos:'Pérez López',telefono:'0000000000',rol:'superadmin'},cashier)).status,400);count++;
+ assert.equal((await api('/api/perfil',{nombres:'Carlos Andrés',apellidos:'Pérez López',telefono:'0000000000'},cashier)).status,200);count++;
+ const selfAfter=(await db.doc('usuarios/cashier').get()).data();assert.equal(selfAfter.nombre,'Carlos Andrés Pérez López');assert.equal(selfAfter.rol,selfBefore.rol);assert.equal(selfAfter.empresaId,selfBefore.empresaId);count++;
+ await db.doc('empresas/state-check').set({estado:'activa',capitalInicial:123.45});
+ const stateBody={empresaId:'state-check',expectedEstado:'activa',estado:'suspendida',motivo:'Suspensión administrativa de prueba'};
+ assert.equal((await api('/api/admin/empresa-estado',stateBody,owner)).status,403);count++;
+ assert.equal((await api('/api/admin/empresa-estado',stateBody,platform)).status,200);count++;
+ assert.equal((await api('/api/admin/empresa-estado',stateBody,platform)).status,409);count++;
+ assert.equal((await db.doc('empresas/state-check').get()).data().capitalInicial,123.45);count++;
+ console.log('PASS operational UX endpoints preserve tenants, roles, balances and zero scores');
+ const tasksCreate={action:'create',key:crypto.randomUUID(),kind:'cobranza',title:'Seguimiento ficticio del cliente',clientId:'scored',assigneeUid:'cashier',dueDate:'2026-10-24',note:'Gestión exclusivamente de prueba',promiseCents:40000};
+ const financialBefore=JSON.stringify(await Promise.all(['prestamos','cuotas','pagos'].map(async name=>(await db.collection(name).get()).docs.map(d=>({id:d.id,...d.data()})))));
+ assert.equal((await api('/api/gestion',tasksCreate)).status,401);count++;
+ assert.equal((await api('/api/gestion',{...tasksCreate,assigneeUid:'other'},other)).status,403);count++;
+ assert.equal((await api('/api/gestion',{...tasksCreate,key:crypto.randomUUID(),assigneeUid:'legacyOwner'},cashier)).status,403);count++;
+ const createdTask=await api('/api/gestion',tasksCreate,owner);assert.equal(createdTask.status,200,await createdTask.clone().text());const taskId=(await createdTask.json()).id;count++;
+ const repeatedTask=await api('/api/gestion',tasksCreate,owner);assert.equal(repeatedTask.status,200);assert.equal((await repeatedTask.json()).repeated,true);count++;
+ const ownTasks=await api('/api/gestion',{action:'list'},cashier);assert.equal(ownTasks.status,200);assert.ok((await ownTasks.json()).items.some(t=>t.id===taskId));count++;
+ const foreignTasks=await api('/api/gestion',{action:'list'},other);assert.equal((await foreignTasks.json()).items.length,0);count++;
+ const changedTask={action:'update',key:crypto.randomUUID(),taskId,version:0,state:'en_curso',note:'Seguimiento ficticio registrado para la prueba'};
+ assert.equal((await api('/api/gestion',changedTask,other)).status,403);count++;
+ assert.equal((await api('/api/gestion',changedTask,cashier)).status,200);count++;
+ assert.equal((await api('/api/gestion',{...changedTask,key:crypto.randomUUID()},owner)).status,409);count++;
+ assert.equal((await api('/api/gestion',{...changedTask,key:crypto.randomUUID(),version:1,state:'resuelta'},owner)).status,200);count++;
+ const readonlyUser=await user('readonlyOperations','consulta','a',true);assert.equal((await api('/api/gestion',tasksCreate,readonlyUser)).status,403);count++;
+ const financialAfter=JSON.stringify(await Promise.all(['prestamos','cuotas','pagos'].map(async name=>(await db.collection(name).get()).docs.map(d=>({id:d.id,...d.data()})))));assert.equal(financialAfter,financialBefore);count++;
+ for(let i=0;i<22;i++) await db.doc('operational_workspaces/a/tasks/page-'+String(i).padStart(3,'0')).set({state:'pendiente',assigneeUid:'cashier',dueDate:'2026-10-24',version:0,title:'Gestión paginada ficticia',kind:'seguimiento',history:[]});
+ const firstTasks=await (await api('/api/gestion',{action:'list'},owner)).json();assert.equal(firstTasks.items.length,20);assert.ok(firstTasks.next);count++;
+ const nextTasks=await (await api('/api/gestion',{action:'list',cursor:firstTasks.next},owner)).json();assert.equal(nextTasks.items.length,2);assert.equal(new Set([...firstTasks.items,...nextTasks.items].map(t=>t.id)).size,22);count++;
+ for(const path of ['/api/accounting/status','/api/accounting/commands']) {assert.equal((await api(path,{},owner)).status,404);count++;}
+ console.log('PASS operational agenda isolates assignees, paginates, prevents duplicates and never changes financial records');
  console.log('Completed '+count+' client deletion checks.');
 }catch(e){console.error(e);console.error(logs);process.exitCode=1;}finally{child.kill();await db.terminate();}

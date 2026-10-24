@@ -7,12 +7,14 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:clientes": "node --experimental-strip-types --test tests/client-search.test.ts",
+    "test:clientes": "node --experimental-strip-types --test tests/client-search.test.ts tests/operations.test.ts",
     "test:clientes:integration": "firebase emulators:exec --config firebase.test.json --project demo-finova --only auth,firestore \"node tests/client-delete.integration.mjs\"",
     "test:security": "firebase emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage \"node --test tests/security-rules.test.mjs && node tests/client-delete.integration.mjs\"",
     "test:backup": "node --test tests/backup-format.test.mjs",
     "test:capital:compile": "tsc --target es2020 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --strict --outDir .test-build/capital src/lib/capital/core.ts src/lib/capital/service.ts",
-    "test:capital": "npm run test:capital:compile && firebase emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage \"node --test tests/capital.test.cjs && node tests/capital-api.integration.mjs\""
+    "test:capital": "npm run test:capital:compile && firebase emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage \"node --test tests/capital.test.cjs && node tests/capital-api.integration.mjs\"",
+    "test:accounting:compile": "tsc --target es2020 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --strict --outDir .test-build/accounting src/lib/accounting/core.ts src/lib/accounting/service.ts",
+    "test:accounting": "npm run test:accounting:compile && firebase emulators:exec --config firebase.security-test.json --project demo-finova --only firestore \"node --test tests/accounting.test.cjs\""
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -28,6 +30,7 @@
     "lucide-react": "^1.17.0",
     "next": "^16.4.1",
     "next-themes": "^0.4.6",
+    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.76.1",
@@ -42,6 +45,7 @@
     "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
