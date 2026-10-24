@@ -127,7 +127,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(16rem,1fr)_3fr] gap-6">
         {/* Resumen Financiero Sidebar */}
         <div className="space-y-6">
           <Card>
@@ -142,7 +142,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
               <div>
                 <p className="text-sm text-muted-foreground">Total Pagado</p>
                 <p className="text-2xl font-bold text-green-600">
-                  ${prestamos.reduce((acc, p) => acc + ((p.montoTotal || 0) - (p.saldoRestante || 0)), 0).toFixed(2)}
+                  ${prestamos.reduce((acc, p) => acc + ((p.totalPagar ?? p.montoTotal ?? 0) - (p.saldoRestante || 0)), 0).toFixed(2)}
                 </p>
               </div>
               <div className="pt-4 border-t">
@@ -212,7 +212,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
         </div>
 
         {/* Main Content Area */}
-        <div className="md:col-span-3">
+        <div className="min-w-0">
           <Tabs defaultValue="prestamos" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="prestamos">Préstamos</TabsTrigger>
