@@ -96,7 +96,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <Button 
             variant="outline" 
             onClick={async () => {
@@ -191,7 +191,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             <CardDescription>Detalle de cuotas y estado de pagos.</CardDescription>
           </CardHeader>
           <CardContent>
-             <div className="border rounded-md overflow-y-auto max-h-[500px] bg-card/50">
+             <div className="min-w-0 max-w-full border rounded-md overflow-auto max-h-[500px] bg-card/50">
                 <table className="w-full text-sm text-left relative">
                   <thead className="bg-muted sticky top-0 z-10 shadow-sm">
                     <tr>
