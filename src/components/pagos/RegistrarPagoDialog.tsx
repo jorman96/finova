@@ -1,7 +1,7 @@
 "use client";
 
 import { auth } from "@/lib/firebase";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger 
 } from "@/components/ui/dialog";
@@ -17,6 +17,9 @@ import { Prestamo, Cuota } from "@/types";
 import { uploadFileToStorage } from "@/lib/storage";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { apiPost } from '@/lib/api-client';
+import { capitalPost } from '@/lib/capital/client';
+import { amount } from '@/lib/capital/core';
 
 export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { prestamo: Prestamo, cuotas: Cuota[], onPagoRegistrado: () => void }) {
   const { userData } = useAuth();
@@ -49,6 +52,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
   const [metodoPago, setMetodoPago] = useState('efectivo');
   const [observaciones, setObservaciones] = useState("");
   const [comprobanteFile, setComprobanteFile] = useState<File | null>(null);
+  const cachedProof = useRef<{ file: File; url: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,6 +79,25 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
 
     setLoading(true);
     try {
+      if (process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED === 'true') {
+        const summary = await apiPost<{ enabled: boolean }>('/api/capital/summary', {});
+        if (summary.enabled) {
+          const bank = cuentasBancarias.find(b => `${b.banco} - ${b.numero} (${b.titular || 'Sin titular'})` === cuentaDestino);
+          let proofUrl: string | undefined;
+          if (comprobanteFile) {
+            setUploading(true);
+            proofUrl = cachedProof.current?.file === comprobanteFile ? cachedProof.current.url : await uploadFileToStorage(comprobanteFile, `pagos/${crypto.randomUUID()}/${comprobanteFile.name}`, setUploadProgress);
+            cachedProof.current = { file: comprobanteFile, url: proofUrl };
+            setUploading(false);
+          }
+          const result = await capitalPost<{ id: string; verified: boolean }>(userData.empresaId, 'receive:' + prestamo.id, { type: 'receive', loanId: prestamo.id, cents: amount(monto), method: metodoPago, ...(bank ? { bankId: bank.id } : {}), note: observaciones, ...(proofUrl ? { proofUrl } : {}) });
+          toast.success('Cobro registrado en el servidor.');
+          if (!result.verified) toast.warning('El cobro quedó guardado, pero sus intereses requieren conciliación y no se pueden reservar.');
+          fetch('/api/email/recibo', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await auth.currentUser?.getIdToken()}` }, body: JSON.stringify({ reciboId: result.id }) }).then(r => { if (!r.ok) toast.warning('El cobro está guardado; no se pudo enviar el recibo por correo.'); }).catch(() => toast.warning('El cobro está guardado; no se pudo enviar el recibo por correo.'));
+          setOpen(false); setComprobanteFile(null); cachedProof.current = null; setUploadProgress(0); onPagoRegistrado();
+          return;
+        }
+      }
       const batch = writeBatch(db);
       let montoRestante = montoPago;
 
@@ -185,7 +208,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
       onPagoRegistrado();
     } catch (error) {
       console.error(error);
-      toast.error("Error al registrar el pago");
+      toast.error(error instanceof Error ? error.message : "Error al registrar el pago");
     } finally {
       setLoading(false);
       setUploading(false);
@@ -207,6 +230,7 @@ export function RegistrarPagoDialog({ prestamo, cuotas, onPagoRegistrado }: { pr
 
         {proximaCuota ? (
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+            {process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED === 'true' && <p className="rounded-md bg-muted p-3 text-xs">En financieras habilitadas, el servidor separa los cobros nuevos proporcionalmente entre capital e intereses. El historial sin desglose verificable queda pendiente de conciliación.</p>}
             <div className="space-y-2">
               <Label>Monto a Pagar ($)</Label>
               <Input 

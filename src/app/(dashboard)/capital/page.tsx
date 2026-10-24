@@ -1,0 +1,140 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { Landmark, Plus, RefreshCw, Download, AlertTriangle, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { useAuth } from '@/contexts/AuthContext';
+import { apiPost } from '@/lib/api-client';
+import { capitalPost } from '@/lib/capital/client';
+import { amount, percentage, sourceDate, today } from '@/lib/capital/core';
+import type { CapitalView, Due, Payout, Reserve, Restriction } from '@/lib/capital/view';
+import { uploadFileToStorage } from '@/lib/storage';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+
+const money = (n = 0) => new Intl.NumberFormat('es-EC', { style: 'currency', currency: 'USD' }).format(n / 100);
+type Action = { type: 'contribute' } | { type: 'returnContribution'; contributionId: string } | { type: 'agreement' } | { type: 'reserve'; due: Due } | { type: 'pay'; due: Due } | { type: 'reverse'; payout: Payout } | { type: 'release'; reserve: Reserve } | { type: 'restrict' } | { type: 'unrestrict'; restriction: Restriction };
+const titles = { contribute: 'Registrar aporte recibido', returnContribution: 'Devolver aporte sin plan', agreement: 'Plan de devolución', reserve: 'Reservar intereses cobrados', pay: 'Confirmar pago al financiador', reverse: 'Registrar restitución del dinero', release: 'Liberar reserva sin pagar', restrict: 'Apartar para gastos o liquidez', unrestrict: 'Liberar apartado' };
+function sourceName(data: CapitalView, source: string) {
+  if (source === 'cash') return 'Caja · efectivo';
+  const bank = data.banks.find(b => 'bank:' + b.id === source);
+  return bank ? `${bank.banco} · cuenta terminada en ${bank.numero.slice(-4)}` : 'Cuenta bancaria de origen';
+}
+export default function CapitalPage() {
+  const { userData } = useAuth();
+  const [stored, setData] = useState<CapitalView | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(true);
+  const [action, setAction] = useState<Action | null>(null), [busy, setBusy] = useState(false);
+  const data = stored?.empresaId === userData?.empresaId ? stored : null;
+  const refresh = useCallback(async () => {
+    setLoading(true); setError('');
+    try { setData(await apiPost<CapitalView>('/api/capital/status', {})); }
+    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo consultar el módulo.'); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    let active = true;
+    apiPost<CapitalView>('/api/capital/status', {}).then(value => { if (active) setData(value); }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [userData?.empresaId]);
+  function exportPayments() {
+    if (!data || data.truncated) return;
+    const rows: (string | number)[][] = [['Tipo', 'Fecha', 'Referencia interna', 'Plan', 'Importe USD', 'Capital USD', 'Costo financiador USD', 'Comprobante', 'Estado']];
+    for (const p of data.payouts) rows.push(['Pago', p.date, p.id, p.agreementId, (p.amount / 100).toFixed(2), (p.principal / 100).toFixed(2), (p.financeCost / 100).toFixed(2), p.reference, p.reversed ? 'Restituido' : 'Registrado']);
+    for (const r of data.reversals) rows.push(['Restitución', r.date, r.id, r.payoutId, (-r.amount / 100).toFixed(2), '', '', r.reference, r.reason]);
+    const csv = '\uFEFF' + rows.map(row => row.map(value => { let s = String(value); if (/^[=+@-]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; }).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = url; a.download = 'pagos-capital-' + today() + '.csv'; a.click(); URL.revokeObjectURL(url);
+  }
+  const canWrite = !!data?.enabled && !data.truncated;
+  return <section className="mx-auto max-w-6xl space-y-6">
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="flex items-center gap-2 text-2xl font-bold"><Landmark className="size-6" /> Pagos de capital</h1><p className="mt-1 text-muted-foreground">Aparta intereses cobrados y controla la devolución de cada aporte.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={refresh} disabled={loading}><RefreshCw className="mr-2 size-4" /> Actualizar</Button><Button variant="outline" onClick={() => setAction({ type: 'contribute' })} disabled={!canWrite}>Registrar aporte recibido</Button><Button onClick={() => setAction({ type: 'agreement' })} disabled={!canWrite}><Plus className="mr-2 size-4" /> Nuevo plan</Button></div></header>
+    {error && <p role="alert" className="rounded-lg border border-destructive p-4 text-destructive">{error}</p>}
+    {!data && loading && <p role="status">Consultando compromisos e intereses…</p>}
+    {data && <>
+      <div className="rounded-xl border bg-card p-5 text-sm space-y-2"><h2 className="font-semibold">{data.enabled ? 'Control habilitado · USD' : 'Módulo disponible solo en pruebas autorizadas'}</h2><p>Reservar no es pagar. Un pago confirmado reduce el saldo del plan y la caja registrada; Finova no realiza transferencias bancarias.</p><p className="text-muted-foreground">Solo se pueden asignar intereses de cobros nuevos con desglose verificado y origen identificado. Los intereses no equivalen por sí solos a utilidad neta: aparta también gastos y liquidez. Las reservas son un control interno, no un bloqueo bancario.</p></div>
+      {data.truncated && <p role="alert" className="rounded-lg border p-4">La vista alcanzó su límite de registros. Se deshabilitaron nuevas operaciones y la exportación para no trabajar con información incompleta.</p>}
+      {!!data.totals.unverifiedReceipts && <p className="flex gap-2 rounded-lg border p-4 text-sm"><AlertTriangle className="size-5 shrink-0" />{data.totals.unverifiedReceipts} cobros nuevos requieren conciliación de su distribución. Sus intereses no se incluyen en los fondos disponibles.</p>}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[
+        ['Interés elegible cobrado', data.totals.collected || 0], ['Reservado para cuotas', data.totals.reserved || 0], ['Pagado · neto de restituciones', data.totals.spent || 0], ['Interés sin asignar', (data.totals.collected || 0) - (data.totals.reserved || 0) - (data.totals.spent || 0) - (data.totals.restricted || 0)],
+      ].map(([label, value]) => <article key={String(label)} className="rounded-xl border bg-card p-4"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold">{money(Number(value))}</p></article>)}</div>
+      <section className="space-y-4"><h2 className="text-lg font-semibold">Compromisos de devolución</h2>{!data.agreements.length && <div className="rounded-xl border border-dashed p-8 text-center"><p className="font-medium">Todavía no hay planes registrados.</p><p className="mt-2 text-sm text-muted-foreground">Vincula una inyección existente y confirma si debe devolverse. No modificaremos el aporte original ni volveremos a ingresarlo a caja.</p></div>}
+        {data.agreements.map(a => { const dues = data.installments.filter(d => d.agreementId === a.id).sort((x, y) => x.number - y.number); const next = dues.find(d => d.paid < d.total); return <article key={a.id} className="rounded-xl border bg-card p-5 space-y-4"><div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold">{a.beneficiary}</h3><p className="text-sm text-muted-foreground">Cuota objetivo {money(a.monthly)} · Destino máximo {(a.reserveBps / 100).toFixed(2)}% del interés elegible de cada cobro</p></div><span className="text-sm font-medium">{a.state === 'paid' ? 'Plan pagado' : next && next.dueDate < today() ? 'Cuota vencida' : 'Plan activo'}</span></div><div className="grid gap-3 sm:grid-cols-3 text-sm"><p>Capital pendiente<strong className="block text-lg">{money(a.principal - a.principalPaid)}</strong></p><p>Costo del financiador pendiente<strong className="block text-lg">{money(a.financeCost - a.financeCostPaid)}</strong></p><p>Total por pagar<strong className="block text-lg">{money(a.total - a.paid)}</strong></p></div>{next && <p className="rounded-lg bg-muted p-3 text-sm">Próxima cuota: {next.dueDate} · Pagado {money(next.paid)} · Reservado {money(next.reserved)} · Falta reservar {money(Math.max(0, next.total - next.paid - next.reserved))}</p>}
+          <details><summary className="cursor-pointer text-sm font-medium">Ver cuotas y registrar movimientos</summary><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[650px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Cuota</th><th className="p-2">Vence</th><th className="p-2">Objetivo</th><th className="p-2">Pagado</th><th className="p-2">Reservado</th><th className="p-2">Acciones</th></tr></thead><tbody>{dues.map(d => <tr key={d.id} className="border-b"><td className="p-2">{d.number}</td><td className="p-2">{d.dueDate}</td><td className="p-2">{money(d.total)}</td><td className="p-2">{money(d.paid)}</td><td className="p-2">{money(d.reserved)}</td><td className="flex gap-2 p-2"><Button size="sm" variant="outline" disabled={!canWrite || d.total <= d.paid + d.reserved} onClick={() => setAction({ type: 'reserve', due: d })}>Reservar</Button><Button size="sm" disabled={!canWrite || !d.reserved} onClick={() => setAction({ type: 'pay', due: d })}>Registrar pago</Button></td></tr>)}</tbody></table></div></details>
+        </article>; })}
+      </section>
+      <section className="rounded-xl border p-5 space-y-4"><div className="flex flex-wrap justify-between gap-3"><h2 className="text-lg font-semibold">Intereses y apartados</h2><Button variant="outline" disabled={!canWrite || !data.lots.length} onClick={() => setAction({ type: 'restrict' })}>Apartar para gastos o liquidez</Button></div><p className="text-sm">Apartado para otros fines: <strong>{money(data.totals.restricted)}</strong>. Apartar no registra un gasto pagado.</p>{!data.lots.length && <p className="text-sm text-muted-foreground">Los nuevos cobros verificados aparecerán aquí. El historial anterior permanece sin asignar hasta conciliarlo.</p>}<div className="space-y-2">{data.lots.map(l => <details key={l.id} className="rounded-lg bg-muted/40 p-3 text-sm"><summary className="cursor-pointer">{l.date} · {sourceName(data, l.source)} · Disponible {money(l.interest - l.reserved - l.spent - l.restricted)}</summary><p className="mt-2">Interés cobrado {money(l.interest)} · Reservado {money(l.reserved)} · Pagado {money(l.spent)} · Apartado {money(l.restricted)}</p><Link className="underline" href={'/prestamos/' + l.loanId}>Consultar crédito de origen</Link><p className="break-all text-xs">Cobro: {l.receiptId}</p></details>)}</div>
+        {data.reserves.filter(r => r.remaining > 0).map(r => <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm"><p>Reserva {r.id.slice(0, 8)} · {sourceName(data, r.source)} · {money(r.remaining)}</p><Button size="sm" variant="outline" disabled={!canWrite} onClick={() => setAction({ type: 'release', reserve: r })}>Liberar reserva</Button></div>)}
+        {data.restrictions.filter(r => !r.released).map(r => <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm"><p>{r.reason} · {money(r.amount)}</p><Button size="sm" variant="outline" disabled={!canWrite} onClick={() => setAction({ type: 'unrestrict', restriction: r })}>Liberar apartado</Button></div>)}
+      </section>
+      {!!data.contributions.length && <section className="rounded-xl border p-5 space-y-3"><h2 className="text-lg font-semibold">Aportes nuevos registrados</h2>{data.contributions.map(c => <article key={c.id} className="border-t pt-3 text-sm space-y-2"><p>{c.date} · {money(c.amount)} · {c.returned ? 'Devuelto sin borrar el ingreso original' : c.reason}</p><p>Referencia: {c.reference}</p>{data.contribution_returns.filter(r => r.contributionId === c.id).map(r => <p key={r.id}>Devolución {r.date} · {r.reason} · {r.reference}</p>)}{!c.returned && !data.agreements.some(a => a.injectionId === c.id) && <Button size="sm" variant="outline" disabled={!canWrite} onClick={() => setAction({ type: 'returnContribution', contributionId: c.id })}>Registrar devolución del aporte</Button>}</article>)}</section>}
+      <section className="space-y-3"><div className="flex flex-wrap justify-between gap-2"><h2 className="text-lg font-semibold">Pagos y comprobantes</h2><Button variant="outline" onClick={exportPayments} disabled={data.truncated || !data.payouts.length}><Download className="mr-2 size-4" /> Exportar historial CSV</Button></div>{!data.payouts.length && <p className="rounded-lg border p-6 text-sm text-muted-foreground">No hay pagos confirmados al financiador.</p>}{[...data.payouts].sort((a, b) => b.date.localeCompare(a.date)).map(p => <article key={p.id} className="rounded-xl border p-4 text-sm space-y-2"><div className="flex flex-wrap justify-between gap-3"><div><p className="font-semibold">{data.agreements.find(a => a.id === p.agreementId)?.beneficiary} · {money(p.amount)}</p><p>{p.date} · {sourceName(data, p.source)} · {p.reversed ? 'Dinero restituido' : 'Pago registrado'}</p></div>{!p.reversed && <Button variant="outline" size="sm" disabled={!canWrite} onClick={() => setAction({ type: 'reverse', payout: p })}>Registrar restitución</Button>}</div><p>Capital: {money(p.principal)} · Costo de financiación: {money(p.financeCost)}</p><p className="break-all">Comprobante: {p.reference}</p>{p.proofUrl && <a href={p.proofUrl} target="_blank" rel="noopener noreferrer" className="underline">Abrir archivo adjunto</a>}<details><summary className="cursor-pointer">Referencia y restituciones</summary><p className="break-all">{p.id}</p>{data.reversals.filter(r => r.payoutId === p.id).map(r => <p key={r.id}>{r.date} · {r.reason} · {r.reference}</p>)}</details></article>)}</section>
+      <Dialog open={!!action} onOpenChange={open => { if (!open && !busy) setAction(null); }}>{action && <ActionForm key={action.type + ('due' in action ? action.due.id : '')} action={action} data={data} busy={busy} setBusy={setBusy} onClose={() => setAction(null)} onDone={() => { setAction(null); void refresh(); window.dispatchEvent(new Event('finova-capital-updated')); }} />}</Dialog>
+    </>}
+  </section>;
+}
+
+function ActionForm({ action, data, busy, setBusy, onClose, onDone }: { action: Action; data: CapitalView; busy: boolean; setBusy: (v: boolean) => void; onClose: () => void; onDone: () => void }) {
+  const linked = new Set(data.agreements.map(a => a.injectionId));
+  const availableInjections = data.injections.filter(i => { try { amount(i.monto); sourceDate(i.fecha); return !linked.has(i.id) && !data.contributions.some(c => c.id === i.id && c.returned); } catch { return false; } });
+  const due = 'due' in action ? action.due : null;
+  const sources = due ? [...new Set(data.reserves.filter(r => r.installmentId === due.id && r.remaining > 0).map(r => r.source))] : [];
+  const [form, setForm] = useState({ injectionId: availableInjections[0]?.id || '', beneficiary: '', mode: 'principal_only', cost: '0.00', monthly: '400.00', firstDate: today(), percent: '100', value: due ? ((action.type === 'pay' ? Math.min(due.reserved, due.total - due.paid) : due.total - due.paid - due.reserved) / 100).toFixed(2) : '', source: sources[0] || 'cash', lotId: data.lots[0]?.id || '', date: today(), reference: '', reason: '', confirmed: false });
+  const [error, setError] = useState(''), [file, setFile] = useState<File | null>(null), [proofUrl, setProofUrl] = useState<string | undefined>();
+  const set = (key: string, value: string | boolean) => { if (busy) return; setForm(old => ({ ...old, [key]: value })); setError(''); };
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); if (busy) return; setBusy(true); setError('');
+    try {
+      let command: Record<string, unknown> = { type: action.type };
+      if (action.type === 'contribute') {
+        if (!form.confirmed) throw new Error('Confirma que el dinero ya fue recibido.');
+        command = { ...command, cents: amount(form.value), reason: form.reason, reference: form.reference, confirmedReceived: true };
+      } else if (action.type === 'returnContribution') {
+        if (!form.confirmed) throw new Error('Confirma la devolución real del dinero.');
+        command = { ...command, contributionId: action.contributionId, reason: form.reason, reference: form.reference, confirmedReturned: true };
+      } else if (action.type === 'agreement') {
+        const percent = Number(form.percent);
+        if (!Number.isInteger(percent) || percent < 1 || percent > 100 || !form.confirmed) throw new Error('Indica un porcentaje de 1 a 100 y confirma que el aporte debe devolverse.');
+        command = { ...command, injectionId: form.injectionId, beneficiary: form.beneficiary, mode: form.mode, cost: form.mode === 'principal_only' ? 0 : amount(form.cost, true), monthly: amount(form.monthly), firstDate: form.firstDate, reserveBps: percent * 100, acknowledgedDebt: true };
+      } else if (action.type === 'reserve') {
+        const agreement = data.agreements.find(a => a.id === action.due.agreementId)!;
+        let remaining = amount(form.value); const lots: { id: string; cents: number }[] = [];
+        for (const lot of [...data.lots].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))) {
+          if (!remaining || lots.length >= 25) break;
+          const used = data.claims.find(c => c.lotId === lot.id && c.agreementId === agreement.id)?.used || 0;
+          const take = Math.min(remaining, lot.interest - lot.reserved - lot.spent - lot.restricted, percentage(lot.interest, agreement.reserveBps) - used);
+          if (take > 0) { lots.push({ id: lot.id, cents: take }); remaining -= take; }
+        }
+        if (remaining) throw new Error('No hay interés elegible suficiente dentro del porcentaje del plan. Puedes reservar un importe menor.');
+        command = { ...command, agreementId: agreement.id, installmentId: action.due.id, lots };
+      } else if (action.type === 'pay' || action.type === 'reverse') {
+        if (!form.confirmed) throw new Error('Debes confirmar el movimiento real del dinero antes de registrarlo.');
+        let proof = proofUrl;
+        if (file && !proof) { proof = await uploadFileToStorage(file, `capital/${crypto.randomUUID()}/${file.name}`); setProofUrl(proof); }
+        const common = { date: form.date, reference: form.reference, ...(proof ? { proofUrl: proof } : {}) };
+        command = action.type === 'pay' ? { ...command, ...common, agreementId: action.due.agreementId, installmentId: action.due.id, cents: amount(form.value), source: form.source, confirmedCashAvailable: true } : { ...command, ...common, payoutId: action.payout.id, reason: form.reason, confirmedReturned: true };
+      } else if (action.type === 'release') command = { ...command, reserveId: action.reserve.id, reason: form.reason };
+      else if (action.type === 'restrict') command = { ...command, lotId: form.lotId, cents: amount(form.value), reason: form.reason };
+      else command = { ...command, restrictionId: action.restriction.id, reason: form.reason };
+      const context = action.type + ':' + ('due' in action ? action.due.id : 'payout' in action ? action.payout.id : 'reserve' in action ? action.reserve.id : 'restriction' in action ? action.restriction.id : 'contributionId' in action ? action.contributionId : 'new');
+      await capitalPost(data.empresaId, context, command);
+      toast.success('Movimiento registrado y fondos actualizados.'); onDone();
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo registrar. Reintenta con la misma referencia; no dupliques el movimiento.'); }
+    finally { setBusy(false); }
+  }
+  const text = (key: keyof typeof form, label: string, type = 'text', required = true) => <div className="space-y-2"><Label htmlFor={'capital-' + key}>{label}</Label><Input id={'capital-' + key} type={type} inputMode={['value', 'monthly', 'cost'].includes(key) ? 'decimal' : undefined} value={String(form[key])} required={required} disabled={busy} maxLength={key === 'reason' ? 240 : 100} onChange={e => set(key, e.target.value)} /></div>;
+  return <DialogContent showCloseButton={!busy} className="flex max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"><DialogHeader className="shrink-0 border-b p-5 pr-12"><DialogTitle>{titles[action.type]}</DialogTitle><DialogDescription>Importes en USD. El servidor comprobará saldos y referencias antes de guardar.</DialogDescription></DialogHeader><form onSubmit={submit} className="flex min-h-0 flex-col" aria-busy={busy}><div className="min-h-0 space-y-4 overflow-y-auto p-5">
+    {error && <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">{error}</p>}
+    {action.type === 'agreement' && <><div className="space-y-2"><Label htmlFor="capital-injection">Inyección existente</Label><select id="capital-injection" required className="h-10 w-full rounded-md border bg-background px-3" value={form.injectionId} onChange={e => set('injectionId', e.target.value)}>{!availableInjections.length && <option value="">No hay aportes disponibles</option>}{availableInjections.map(i => <option key={i.id} value={i.id}>{sourceDate(i.fecha)} · {money(amount(i.monto))} · {i.observaciones}</option>)}</select></div>{text('beneficiary', 'Persona o entidad que recibirá los pagos')}<div className="space-y-2"><Label htmlFor="capital-mode">Composición de la obligación</Label><select id="capital-mode" className="h-10 w-full rounded-md border bg-background px-3" value={form.mode} onChange={e => set('mode', e.target.value)}><option value="principal_only">Solo devolver el capital recibido</option><option value="includes_interest">Capital más intereses del financiador</option></select></div>{form.mode === 'includes_interest' && text('cost', 'Intereses totales pactados del financiador · USD')}<div className="grid gap-4 sm:grid-cols-2">{text('monthly', 'Cuota mensual objetivo · USD')}{text('firstDate', 'Primer vencimiento', 'date')}</div>{text('percent', 'Porcentaje máximo de cada interés cobrado · 1 a 100', 'number')}<p className="text-xs text-muted-foreground">El plan reparte proporcionalmente el capital y el costo total declarado; no calcula tasas ni cambia el aporte original. La última cuota puede ser menor. Las reservas se confirman manualmente.</p><label className="flex items-start gap-3 text-sm"><input type="checkbox" required checked={form.confirmed} onChange={e => set('confirmed', e.target.checked)} className="mt-1" />Confirmo que este aporte es una obligación de devolución y que el calendario y los intereses declarados corresponden al acuerdo.</label></>}
+    {['reserve', 'pay', 'restrict', 'contribute'].includes(action.type) && text('value', 'Importe · USD')}
+    {['contribute', 'returnContribution'].includes(action.type) && <>{text('reference', 'Referencia del comprobante')}<label className="flex items-start gap-3 text-sm"><input type="checkbox" required checked={form.confirmed} onChange={e => set('confirmed', e.target.checked)} />{action.type === 'contribute' ? 'Confirmo que este dinero se recibió realmente. Registrar el aporte no crea automáticamente una deuda ni un pago.' : 'Confirmo que el dinero se devolvió realmente. El ingreso original se conservará y se registrará una salida de caja.'}</label></>}
+    {action.type === 'reserve' && <p className="text-sm text-muted-foreground">Se tomarán los cobros elegibles más antiguos hasta cubrir este importe, respetando el porcentaje del plan. No se descontará dinero de caja ni se marcará la cuota como pagada.</p>}
+    {action.type === 'restrict' && <div className="space-y-2"><Label htmlFor="capital-lot">Cobro de origen</Label><select id="capital-lot" className="h-10 w-full rounded-md border bg-background px-3" value={form.lotId} onChange={e => set('lotId', e.target.value)}>{data.lots.map(l => <option key={l.id} value={l.id}>{l.date} · {sourceName(data, l.source)} · Libre {money(l.interest - l.reserved - l.spent - l.restricted)}</option>)}</select><p className="text-xs text-muted-foreground">Este apartado reduce el interés asignable; no equivale a registrar un gasto pagado.</p></div>}
+    {action.type === 'pay' && <><div className="space-y-2"><Label htmlFor="capital-source">Caja o banco que efectuó el pago</Label><select id="capital-source" className="h-10 w-full rounded-md border bg-background px-3" value={form.source} onChange={e => set('source', e.target.value)}>{sources.map(s => <option key={s} value={s}>{sourceName(data, s)} · Reservado {money(data.reserves.filter(r => r.installmentId === due!.id && r.source === s).reduce((v, r) => v + r.remaining, 0))}</option>)}</select></div><label className="flex gap-3 text-sm"><input type="checkbox" required checked={form.confirmed} onChange={e => set('confirmed', e.target.checked)} />Confirmo que el pago ya se realizó, que la caja/banco tiene fondos y que el comprobante corresponde a este movimiento.</label></>}
+    {action.type === 'reverse' && <><p className="rounded-md bg-muted p-3 text-sm">Se registrará la restitución de {money(action.payout.amount)} y se restaurarán sus reservas. No se borrará el pago original.</p><label className="flex gap-3 text-sm"><input type="checkbox" required checked={form.confirmed} onChange={e => set('confirmed', e.target.checked)} />Confirmo que el dinero regresó realmente a la caja o banco de origen. Esta acción no cancela una transferencia bancaria.</label></>}
+    {['pay', 'reverse'].includes(action.type) && <>{text('date', 'Fecha del movimiento', 'date')}{text('reference', 'Referencia del comprobante')}<div className="space-y-2"><Label htmlFor="capital-proof">Archivo del comprobante · opcional</Label><Input id="capital-proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={busy} onChange={e => { setFile(e.target.files?.[0] || null); setProofUrl(undefined); }} /><p className="text-xs text-muted-foreground">JPG, PNG, WebP o PDF de hasta 5 MB. La referencia del comprobante es obligatoria.</p></div></>}
+    {['release', 'restrict', 'unrestrict', 'reverse', 'contribute', 'returnContribution'].includes(action.type) && text('reason', 'Motivo del movimiento')}
+  </div><footer className="flex shrink-0 flex-col-reverse gap-2 border-t bg-muted/40 p-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancelar</Button><Button disabled={busy || (action.type === 'agreement' && !availableInjections.length)} type="submit">{busy && <Loader2 className="mr-2 size-4 animate-spin" />}{busy ? 'Registrando…' : action.type === 'pay' ? 'Registrar pago confirmado' : 'Confirmar movimiento'}</Button></footer></form></DialogContent>;
+}

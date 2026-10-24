@@ -23,6 +23,7 @@ import {
 import Link from "next/link";
 import { collection, query, where, onSnapshot, orderBy, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { apiPost } from '@/lib/api-client';
 import { useAuth } from "@/contexts/AuthContext";
 import { PagosChart } from "@/components/dashboard/PagosChart";
 import { UltimosMovimientos } from "@/components/dashboard/UltimosMovimientos";
@@ -53,6 +54,15 @@ export default function DashboardPage() {
   const [rawInversiones, setRawInversiones] = useState<any[]>([]);
   const [rawCuotasInversionistas, setRawCuotasInversionistas] = useState<any[]>([]);
   const [rawPagosInversionistas, setRawPagosInversionistas] = useState<any[]>([]);
+  const [capitalSummary, setCapitalSummary] = useState<{ empresaId: string; enabled: boolean; outflow: number; reserved: number } | null>(null);
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED !== 'true' || !userData?.empresaId) return;
+    let active = true;
+    const update = () => { apiPost<{ empresaId: string; enabled: boolean; outflow: number; reserved: number }>('/api/capital/summary', {}).then(value => { if (active) setCapitalSummary(value); }).catch(() => { if (active) setCapitalSummary(null); }); };
+    update(); window.addEventListener('focus', update); window.addEventListener('finova-capital-updated', update);
+    return () => { active = false; window.removeEventListener('focus', update); window.removeEventListener('finova-capital-updated', update); };
+  }, [userData?.empresaId]);
+  const capitalTotals = capitalSummary?.empresaId === userData?.empresaId ? capitalSummary : null;
 
   // Filtro de fechas (Por defecto: 'mes' -> mes en curso)
   const [periodo, setPeriodo] = useState<PeriodoTipo>('mes');
@@ -224,12 +234,13 @@ export default function DashboardPage() {
     // Caja Disponible (Total Histórico Real: Capital Propio + Fondeo Cartera Inversionistas + Total Pagos Clientes - Total Prestado Clientes - Liquidaciones a Inversionistas)
     const totalPrestadoHistorico = rawPrestamos.reduce((sum, p) => sum + (p.monto || 0), 0);
     const totalPagosHistorico = rawPagos.reduce((sum, p) => sum + (p.monto || 0), 0);
-    const cajaDisponible = (capitalInvertido + totalFondeoCartera) - totalPrestadoHistorico + totalPagosHistorico - totalPagosInversionistas;
+    const cajaDisponible = (capitalInvertido + totalFondeoCartera) - totalPrestadoHistorico + totalPagosHistorico - totalPagosInversionistas - (capitalTotals?.outflow || 0) / 100;
 
     // Métricas de Cobertura y Spread de Inversionistas del Período
     // 1. Intereses cobrados a clientes prestatarios en el período
     let interesCobradoClientesPeriodo = 0;
     pagosFiltrados.forEach(p => {
+      if (capitalTotals?.enabled) { if (p.allocationVerified === true) interesCobradoClientesPeriodo += (p.interesCentavos || 0) / 100; return; }
       if (Array.isArray(p.cuotasAplicadas) && p.cuotasAplicadas.length > 0) {
         p.cuotasAplicadas.forEach((ca: any) => {
           interesCobradoClientesPeriodo += (ca.interes || 0);
@@ -237,7 +248,7 @@ export default function DashboardPage() {
       }
     });
     // Si no está desglosado en cuotasAplicadas, estimamos con la proporción de interés del período
-    if (interesCobradoClientesPeriodo === 0 && totalRecaudadoPeriodo > 0) {
+    if (!capitalTotals?.enabled && interesCobradoClientesPeriodo === 0 && totalRecaudadoPeriodo > 0) {
       const totalColocado = capitalPrestadoPeriodo + interesProyectadoPeriodo;
       const factorInteres = totalColocado > 0 ? (interesProyectadoPeriodo / totalColocado) : 0.18;
       interesCobradoClientesPeriodo = totalRecaudadoPeriodo * factorInteres;
@@ -287,7 +298,7 @@ export default function DashboardPage() {
       pagosFiltrados,
       prestamosFiltradosCount: prestamosFiltrados.length
     };
-  }, [empresaData, rawPrestamos, rawPagos, rawCuotasVencidas, rawInversiones, rawCuotasInversionistas, rawPagosInversionistas, dateRange]);
+  }, [empresaData, rawPrestamos, rawPagos, rawCuotasVencidas, rawInversiones, rawCuotasInversionistas, rawPagosInversionistas, dateRange, capitalTotals]);
 
   if (loading) {
     return (
@@ -308,9 +319,9 @@ export default function DashboardPage() {
     },
     { 
       title: "Caja Disponible", 
-      value: `$${filteredMetrics.cajaDisponible.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 
+      value: process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED === 'true' && !capitalTotals ? 'Por verificar' : `$${filteredMetrics.cajaDisponible.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: Wallet, 
-      trend: filteredMetrics.totalFondeoCartera > 0 ? "Liquidez (incluye fondeo)" : "Liquidez actual",
+      trend: capitalTotals?.enabled ? `Incluye $${((capitalTotals.reserved || 0) / 100).toFixed(2)} reservados para capital · actualiza al volver a esta pantalla` : filteredMetrics.totalFondeoCartera > 0 ? "Liquidez (incluye fondeo)" : "Liquidez actual",
       color: "text-emerald-500"
     },
     { 

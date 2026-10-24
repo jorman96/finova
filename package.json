@@ -10,7 +10,9 @@
     "test:clientes": "node --experimental-strip-types --test tests/client-search.test.ts",
     "test:clientes:integration": "firebase emulators:exec --config firebase.test.json --project demo-finova --only auth,firestore \"node tests/client-delete.integration.mjs\"",
     "test:security": "firebase emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage \"node --test tests/security-rules.test.mjs && node tests/client-delete.integration.mjs\"",
-    "test:backup": "node --test tests/backup-format.test.mjs"
+    "test:backup": "node --test tests/backup-format.test.mjs",
+    "test:capital:compile": "tsc --target es2020 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --strict --outDir .test-build/capital src/lib/capital/core.ts src/lib/capital/service.ts",
+    "test:capital": "npm run test:capital:compile && firebase emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage \"node --test tests/capital.test.cjs && node tests/capital-api.integration.mjs\""
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

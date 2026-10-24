@@ -42,3 +42,17 @@ test('tenant-filtered detail queries remain usable after isolation',async()=>{
  if(!snap.docs.some(d=>d.id==='a'))throw Error('Expected existing credit');
  await assertFails(getDocs(query(collection(db,'prestamos'),where('clienteId','==','a'))));
 });
+test('enabled capital companies cannot forge collections, allocations or control settings in browser',async()=>{
+ await env.withSecurityRulesDisabled(async c=>{
+  await setDoc(doc(c.firestore(),'capital_settings','a'),{enabled:true,currency:'USD',policy:'proporcional-v1'});
+  await setDoc(doc(c.firestore(),'cuotas','capital-rule-quota'),{empresaId:'a',prestamoId:'a',montoPagado:0});
+ });
+ for(const r of roles){const db=env.authenticatedContext(uid(r)).firestore();
+  await assertFails(setDoc(doc(db,'pagos','forged-'+uid(r)),{empresaId:'a',monto:100,allocationVerified:true}));
+  await assertFails(updateDoc(doc(db,'cuotas','capital-rule-quota'),{interesCobradoCentavos:100}));
+  await assertFails(setDoc(doc(db,'capital_control','a','lots','fake'),{interest:100000}));
+  await assertFails(setDoc(doc(db,'capital_settings','a'),{enabled:false}));
+  await assertFails(updateDoc(doc(db,'empresas','a'),{capitalInicial:999999}));
+  await assertFails(updateDoc(doc(db,'empresas','a'),{inyeccionesCapital:[]}));
+ }
+});

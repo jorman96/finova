@@ -79,7 +79,7 @@ export const generarReciboPago = async (
       body: pago.cuotasAplicadas.map((c: any) => [
         `${c.numeroCuota}`,
         formatMoney(c.valorCuota, empresa?.moneda),
-        formatMoney(c.interes, empresa?.moneda),
+        c.interes == null ? "Por conciliar" : formatMoney(c.interes, empresa?.moneda),
         formatMoney(c.montoAbonado, empresa?.moneda),
         formatMoney(c.saldoRestante, empresa?.moneda)
       ]),

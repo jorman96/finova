@@ -63,6 +63,7 @@ export default function DashboardLayout({
   }
 
   if (userData?.rol === 'dueño' || userData?.rol === 'superadmin' || userData?.rol === 'admin') {
+    if (process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED === 'true') navItems.push({ name: 'Pagos de capital', href: '/capital', icon: Landmark });
     navItems.push(
       { name: "Inversionistas", href: "/inversionistas", icon: Landmark },
       { name: "Reportes", href: "/reportes", icon: FileText },

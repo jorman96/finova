@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { InyeccionCapital, MovimientoBitacoraCapital } from "@/types";
 import { ResetValoresDialog } from "@/components/configuracion/ResetValoresDialog";
+import { apiPost } from '@/lib/api-client';
 
 export default function ConfiguracionPage() {
   const { user, userData } = useAuth();
@@ -29,6 +30,13 @@ export default function ConfiguracionPage() {
   const router = useRouter();
   
   const [loading, setLoading] = useState(false);
+  const [controlledCapital, setControlledCapital] = useState(false);
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED !== 'true') return;
+    let active = true;
+    apiPost<{ enabled: boolean }>('/api/capital/summary', {}).then(v => { if (active) setControlledCapital(v.enabled); }).catch(() => {});
+    return () => { active = false; };
+  }, [userData?.empresaId]);
   const [empresaData, setEmpresaData] = useState({
     nombre: "Finova Capital",
     moneda: "USD",
@@ -50,6 +58,7 @@ export default function ConfiguracionPage() {
   const [nuevoBanco, setNuevoBanco] = useState({ banco: "", numero: "", tipo: "ahorros", titular: "" });
 
   const handleAddBanco = () => {
+    if (controlledCapital) { toast.info('Las cuentas de origen están protegidas mientras opera Pagos de capital. Su modificación requiere conciliación.'); return; }
     if (!nuevoBanco.banco || !nuevoBanco.numero) return;
     const newBanco = {
       id: Date.now().toString(),
@@ -60,6 +69,7 @@ export default function ConfiguracionPage() {
   };
 
   const handleInyectarCapital = async () => {
+    if (controlledCapital) { toast.info('Registra el aporte recibido desde Pagos de capital para conservar su comprobante y auditoría.'); return; }
     if (!nuevaInyeccion.monto || nuevaInyeccion.monto <= 0) {
       toast.error("Ingrese un monto válido");
       return;
@@ -114,6 +124,7 @@ export default function ConfiguracionPage() {
   };
 
   const handleConfirmarReversion = async () => {
+    if (controlledCapital) { toast.info('Los aportes están protegidos. Registra su devolución desde Pagos de capital; los aportes históricos requieren conciliación.'); return; }
     if (!inyeccionARevertir || !userData?.empresaId) return;
     setIsReverting(true);
 
@@ -161,6 +172,7 @@ export default function ConfiguracionPage() {
   };
 
   const handleRemoveBanco = (id: string) => {
+    if (controlledCapital) { toast.info('No se puede retirar una cuenta de origen mientras los fondos están bajo control. Requiere conciliación.'); return; }
     setEmpresaData(prev => ({ ...prev, cuentasBancarias: (prev.cuentasBancarias || []).filter(c => c.id !== id) }));
   };
 
@@ -206,10 +218,8 @@ export default function ConfiguracionPage() {
 
       await setDoc(doc(db, "empresas", userData.empresaId), {
         nombre: empresaData.nombre,
-        moneda: empresaData.moneda,
+        ...(!controlledCapital ? { moneda: empresaData.moneda, capitalInicial: parseFloat(empresaData.capitalInicial.toString()) || 0, cuentasBancarias: empresaData.cuentasBancarias || [] } : {}),
         tasaMoraDefecto: empresaData.tasaMoraDefecto,
-        capitalInicial: parseFloat(empresaData.capitalInicial.toString()) || 0,
-        cuentasBancarias: empresaData.cuentasBancarias || [],
         logoUrl: newLogoUrl,
         estado: 'activa' // Por si acaso se está creando por primera vez
       }, { merge: true });
@@ -311,9 +321,9 @@ export default function ConfiguracionPage() {
                     type="number"
                     value={empresaData.capitalInicial} 
                     onChange={e => setEmpresaData({...empresaData, capitalInicial: parseFloat(e.target.value) || 0})} 
-                    disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
+                    disabled={controlledCapital || (userData?.rol !== 'dueño' && userData?.rol !== 'superadmin')}
                   />
-                  <p className="text-xs text-muted-foreground">Monto total con el que iniciaste el negocio originalmente.</p>
+                  <p className="text-xs text-muted-foreground">{controlledCapital ? 'El capital y sus fuentes están protegidos. Gestiona nuevos aportes y devoluciones desde Pagos de capital.' : 'Monto total con el que iniciaste el negocio originalmente.'}</p>
                 </div>
 
                 {userData?.empresaId && (
