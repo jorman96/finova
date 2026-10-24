@@ -121,7 +121,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
             </Button>
           </Link>
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">{cliente.nombres} {cliente.apellidos}</h2>
+            <h2 className="break-words text-3xl font-bold tracking-tight">{cliente.nombres} {cliente.apellidos}</h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-muted-foreground text-sm">CI: {cliente.cedula}</span>
               <Badge variant={cliente.estado === 'moroso' ? 'destructive' : cliente.estado === 'activo' ? 'default' : 'secondary'}>
@@ -130,7 +130,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {userData && ['superadmin','dueño','admin','cajero'].includes(userData.rol) && <EditarClienteDialog cliente={cliente} standalone />}
           {userData && managers.includes(userData.rol) && <NuevoPrestamoDialog initialClienteId={cliente.id} />}
           {userData?.rol !== 'consulta' && <Link className="inline-flex min-h-11 items-center rounded-lg border px-3 text-sm" href={'/gestion?cliente=' + cliente.id}>Crear gestión</Link>}
