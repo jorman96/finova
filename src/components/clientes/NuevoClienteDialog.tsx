@@ -100,7 +100,7 @@ export function NuevoClienteDialog() {
             </TabsList>
             
             <TabsContent value="personal" className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Nombres</Label>
                   <Input name="nombres" value={formData.nombres} onChange={handleChange} required />
@@ -133,7 +133,7 @@ export function NuevoClienteDialog() {
             </TabsContent>
 
             <TabsContent value="laboral" className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Empresa</Label>
                   <Input name="empresa" value={formData.empresa} onChange={handleChange} />
@@ -154,7 +154,7 @@ export function NuevoClienteDialog() {
             </TabsContent>
 
             <TabsContent value="referencias" className="space-y-4 py-4">
-               <div className="grid grid-cols-2 gap-4">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Nombre Referencia 1</Label>
                   <Input name="referencia1" value={formData.referencia1} onChange={handleChange} />

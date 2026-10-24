@@ -5,7 +5,7 @@ export type Reserve = { id: string; agreementId: string; installmentId: string; 
 export type Payout = { id: string; agreementId: string; installmentId: string; date: string; amount: number; principal: number; financeCost: number; source: string; reference: string; proofUrl: string | null; reversed: boolean };
 export type Restriction = { id: string; lotId: string; amount: number; reason: string; released: boolean };
 export type CapitalView = {
-  empresaId: string; enabled: boolean; truncated: boolean;
+  empresaId: string; enabled: boolean; truncated: boolean; initialCapital: number;
   totals: { collected?: number; reserved?: number; spent?: number; restricted?: number; outflow?: number; unverifiedReceipts?: number };
   injections: { id: string; monto: number; fecha: string; observaciones: string }[];
   banks: { id: string; banco: string; numero: string }[];

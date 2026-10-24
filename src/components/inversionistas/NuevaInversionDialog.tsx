@@ -310,7 +310,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div className="space-y-1 p-2.5 rounded-md border bg-emerald-500/5 border-emerald-500/20">
                 <Label htmlFor="montoCartera" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                   Destinado a Cartera de Créditos
@@ -358,7 +358,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
               Condiciones de Pago al Inversionista
             </h4>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">¿Paga Interés / Rendimiento?</Label>
                 <Select value={tieneInteres ? "si" : "no"} onValueChange={v => setTieneInteres(v === "si")}>
@@ -419,7 +419,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="plazoMeses" className="text-xs font-medium">Plazo (Meses)</Label>
                 <Input

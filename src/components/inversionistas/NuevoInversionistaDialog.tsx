@@ -121,7 +121,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="nombres">Nombres / Razón Social *</Label>
               <Input
@@ -143,7 +143,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="identificacion">Cédula / RUC / Pasaporte *</Label>
               <Input
@@ -166,7 +166,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="correo">Correo Electrónico</Label>
               <Input
@@ -192,7 +192,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Datos Bancarios para Liquidación de Rendimientos
             </h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="banco">Banco de Destino</Label>
                 <Input
@@ -216,7 +216,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
               <div className="space-y-1.5">
                 <Label htmlFor="numeroCuenta">Número de Cuenta</Label>
                 <Input

@@ -26,7 +26,7 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
   return (
     <div className="flex flex-col items-center justify-center">
       <div className="relative w-48 h-24">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 192, height: 96 }}>
           <PieChart>
             <Pie
               data={data}

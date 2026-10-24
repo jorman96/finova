@@ -9,17 +9,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
-import { LogOut, Save, Loader2, Moon, Sun, Monitor, Plus, Trash2, RotateCcw, AlertTriangle, ShieldCheck, UserPlus } from "lucide-react";
+import { Save, Loader2, Moon, Sun, Monitor, Plus, Trash2, RotateCcw, AlertTriangle, ShieldCheck, UserPlus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { useTheme } from "next-themes";
-import { signOut } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
 import { InyeccionCapital, MovimientoBitacoraCapital } from "@/types";
 import { ResetValoresDialog } from "@/components/configuracion/ResetValoresDialog";
 import { apiPost } from '@/lib/api-client';
@@ -27,7 +25,6 @@ import { apiPost } from '@/lib/api-client';
 export default function ConfiguracionPage() {
   const { user, userData } = useAuth();
   const { theme, setTheme } = useTheme();
-  const router = useRouter();
   
   const [loading, setLoading] = useState(false);
   const [controlledCapital, setControlledCapital] = useState(false);
@@ -189,15 +186,6 @@ export default function ConfiguracionPage() {
     }
   }, [userData?.empresaId]);
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      router.push("/login");
-    } catch (error) {
-      toast.error("Error al cerrar sesión");
-    }
-  };
-
   const handleSaveEmpresa = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userData?.empresaId) return;
@@ -243,7 +231,7 @@ export default function ConfiguracionPage() {
       </div>
 
       <Tabs defaultValue="perfil" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 max-w-[600px]">
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 max-w-[600px]">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="empresa">Empresa</TabsTrigger>
           <TabsTrigger value="bancos">Cajas y Bancos</TabsTrigger>
@@ -275,11 +263,7 @@ export default function ConfiguracionPage() {
                 </div>
               </div>
             </CardContent>
-            <CardFooter className="flex justify-between border-t p-6">
-              <Button variant="destructive" onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" /> Cerrar Sesión
-              </Button>
-            </CardFooter>
+
           </Card>
         </TabsContent>
 
@@ -608,7 +592,7 @@ export default function ConfiguracionPage() {
             <CardContent className="space-y-6">
               <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
                 <h4 className="font-medium text-sm">Agregar Nueva Cuenta</h4>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Banco / Entidad</Label>
                     <Input placeholder="Ej. Banco Pichincha" value={nuevoBanco.banco} onChange={e => setNuevoBanco({...nuevoBanco, banco: e.target.value})} />

@@ -400,7 +400,7 @@ export default function MasterPanelPage() {
                         <Label>Razón Social (Opcional)</Label>
                         <Input placeholder="Ej. Inversiones PrestaFácil S.A." value={nuevaEmpresa.razonSocial} onChange={e => setNuevaEmpresa({...nuevaEmpresa, razonSocial: e.target.value})} />
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>RUC / NIT</Label>
                           <Input value={nuevaEmpresa.identificacionFiscal} onChange={e => setNuevaEmpresa({...nuevaEmpresa, identificacionFiscal: e.target.value})} required />
@@ -414,7 +414,7 @@ export default function MasterPanelPage() {
                         <Label>Dirección Física</Label>
                         <Input value={nuevaEmpresa.direccion} onChange={e => setNuevaEmpresa({...nuevaEmpresa, direccion: e.target.value})} />
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Teléfono</Label>
                           <Input type="tel" value={nuevaEmpresa.telefono} onChange={e => setNuevaEmpresa({...nuevaEmpresa, telefono: e.target.value})} />
@@ -527,7 +527,7 @@ export default function MasterPanelPage() {
                     <Label>Razón Social</Label>
                     <Input value={selectedEmpresaDetails.razonSocial || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, razonSocial: e.target.value})} />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>RUC / NIT</Label>
                       <Input value={selectedEmpresaDetails.identificacionFiscal} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, identificacionFiscal: e.target.value})} required />
@@ -541,7 +541,7 @@ export default function MasterPanelPage() {
                     <Label>Dirección Física</Label>
                     <Input value={selectedEmpresaDetails.direccion || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, direccion: e.target.value})} />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Teléfono</Label>
                       <Input type="tel" value={selectedEmpresaDetails.telefono || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, telefono: e.target.value})} />
@@ -580,7 +580,7 @@ export default function MasterPanelPage() {
                         <Label>Nombre Completo</Label>
                         <Input value={selectedEmpresaDetails.dueno.nombre} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, dueno: { ...selectedEmpresaDetails.dueno, nombre: e.target.value }})} required />
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Documento</Label>
                           <Input value={selectedEmpresaDetails.dueno.documento || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, dueno: { ...selectedEmpresaDetails.dueno, documento: e.target.value }})} />

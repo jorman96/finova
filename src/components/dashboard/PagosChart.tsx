@@ -49,7 +49,7 @@ export function PagosChart({ data }: PagosChartProps) {
 
   return (
     <div className="h-[300px] w-full pt-4">
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 320, height: 250 }}>
         <AreaChart
           data={chartData}
           margin={{ top: 10, right: 10, left: -20, bottom: 0 }}

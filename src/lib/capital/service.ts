@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { FieldValue, type Firestore, type Transaction, type DocumentData } from 'firebase-admin/firestore';
-import { add, amount, CapitalError, percentage, positive, schedule, share, sourceDate, today, validDate, verifiedSplit } from './core';
+import { add, amount, CapitalError, INITIAL_CAPITAL_ID, percentage, positive, schedule, share, sourceDate, today, validDate, verifiedSplit } from './core';
 
 export type Operator = { uid: string; empresaId: string };
 type Base = { key: string };
@@ -107,15 +107,16 @@ export function capitalService(db: Firestore) {
         result = { id: opId, verified, interest: verified ? totalInterest : 0 };
       } else if (command.type === 'agreement') {
         if (!command.acknowledgedDebt || !command.beneficiary.trim() || command.beneficiary.length > 100 || !Number.isInteger(command.reserveBps) || command.reserveBps < 1 || command.reserveBps > 10000) throw new CapitalError('Confirma la obligación, beneficiario y porcentaje de reserva.');
-        const injection = (company.inyeccionesCapital || []).find((i: { id: string }) => i.id === command.injectionId);
+        const isInitial = command.injectionId === INITIAL_CAPITAL_ID;
+        const injection = isInitial ? { monto: company.capitalInicial } : (company.inyeccionesCapital || []).find((i: { id: string }) => i.id === command.injectionId);
         const link = base.collection('injection_links').doc(safeId(command.injectionId));
         const [existingLink, contribution] = await Promise.all([tx.get(link), tx.get(base.collection('contributions').doc(command.injectionId))]);
         if (!injection || existingLink.exists || contribution.data()?.returned) throw new CapitalError('El aporte no existe, fue restituido o ya tiene un plan de devolución.');
         const principal = amount(injection.monto);
-        if (command.firstDate < sourceDate(injection.fecha)) throw new CapitalError('El primer vencimiento no puede preceder al aporte recibido.');
+        if (!isInitial && command.firstDate < sourceDate(injection.fecha)) throw new CapitalError('El primer vencimiento no puede preceder al aporte recibido.');
         if (!['principal_only', 'includes_interest'].includes(command.mode) || (command.mode === 'principal_only' && command.cost !== 0)) throw new CapitalError('Indica correctamente si el plan incluye intereses del financiador.');
         const rows = schedule(principal, command.cost, command.monthly, command.firstDate);
-        tx.create(base.collection('agreements').doc(opId), { ...meta, injectionId: command.injectionId, beneficiary: command.beneficiary.trim(), mode: command.mode, principal, financeCost: command.cost, total: add(principal, command.cost), monthly: command.monthly, firstDate: command.firstDate, reserveBps: command.reserveBps, paid: 0, principalPaid: 0, financeCostPaid: 0, reserved: 0, state: 'active' });
+        tx.create(base.collection('agreements').doc(opId), { ...meta, injectionId: command.injectionId, sourceType: isInitial ? 'initial_capital' : 'injection', beneficiary: command.beneficiary.trim(), mode: command.mode, principal, financeCost: command.cost, total: add(principal, command.cost), monthly: command.monthly, firstDate: command.firstDate, reserveBps: command.reserveBps, paid: 0, principalPaid: 0, financeCostPaid: 0, reserved: 0, state: 'active' });
         for (const row of rows) tx.create(base.collection('installments').doc(opId + '_' + row.number), { ...row, agreementId: opId, paid: 0, reserved: 0, lastPayoutId: null });
         tx.create(link, { agreementId: opId, ...meta });
       } else if (command.type === 'reserve') {

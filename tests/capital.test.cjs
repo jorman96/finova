@@ -2,7 +2,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { initializeApp, deleteApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
-const { amount, schedule, share, percentage, verifiedSplit, today, sourceDate } = require('../.test-build/capital/core.js');
+const { amount, INITIAL_CAPITAL_ID, schedule, share, percentage, verifiedSplit, today, sourceDate } = require('../.test-build/capital/core.js');
 const { capitalService } = require('../.test-build/capital/service.js');
 let app, db, execute, n = 0;
 const command = (type, data = {}) => ({ key: crypto.randomUUID(), type, ...data });
@@ -142,4 +142,26 @@ test('bank-origin interest can fund only that bank and contribution dates constr
   await assert.rejects(execute(f.actor, payout(p)), /caja\/banco/);
   await execute(f.actor, payout(p, 40000, { source: 'bank:bank-1' })); assert.equal((await totals(f)).spent, 40000);
   const other = await fixture(); await assert.rejects(plan(other, { firstDate: '2020-01-01' }), /preceder/);
+});
+
+
+test('initial capital is linked once without crediting cash again or changing the original contribution', async () => {
+  const f = await fixture();
+  await db.doc('empresas/' + f.actor.empresaId).update({ capitalInicial: 2500 });
+  const original = (await db.doc('empresas/' + f.actor.empresaId).get()).data();
+  const p = await plan(f, { injectionId: INITIAL_CAPITAL_ID });
+  const a = (await f.base.collection('agreements').doc(p.id).get()).data();
+  assert.equal(a.principal, 250000); assert.equal(a.sourceType, 'initial_capital');
+  assert.equal((await totals(f)).outflow, 0); assert.equal((await totals(f)).collected, 0);
+  assert.deepEqual((await db.doc('empresas/' + f.actor.empresaId).get()).data(), original);
+  await assert.rejects(plan(f, { injectionId: INITIAL_CAPITAL_ID }), /ya tiene/);
+  const extra = await plan(f); assert.notEqual(extra.id, p.id);
+});
+
+test('zero or imprecise initial capital cannot become a repayment plan', async () => {
+  const f = await fixture();
+  await assert.rejects(plan(f, { injectionId: INITIAL_CAPITAL_ID }));
+  await db.doc('empresas/' + f.actor.empresaId).update({ capitalInicial: 100.001 });
+  await assert.rejects(plan(f, { injectionId: INITIAL_CAPITAL_ID }));
+  assert.equal((await f.base.collection('agreements').get()).size, 0);
 });

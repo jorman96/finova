@@ -1,6 +1,8 @@
 export interface Usuario {
   uid: string;
   nombre: string;
+  nombres?: string;
+  apellidos?: string;
   email: string;
   documento?: string; // Nuevo
   telefono?: string;  // Nuevo

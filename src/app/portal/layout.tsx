@@ -4,7 +4,7 @@ export default function PortalLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-muted/40">
+    <div className="finova-workspace min-h-dvh min-w-0 bg-muted/40">
       {children}
     </div>
   );

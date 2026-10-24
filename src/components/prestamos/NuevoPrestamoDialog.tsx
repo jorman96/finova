@@ -184,7 +184,7 @@ export function NuevoPrestamoDialog() {
             <ClientePicker clientes={clientes} value={clienteId} onChange={setClienteId} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Monto a Prestar ($)</Label>
               <Input type="number" value={monto} onChange={e => setMonto(e.target.value)} required />

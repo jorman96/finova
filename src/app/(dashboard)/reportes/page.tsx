@@ -306,7 +306,7 @@ export default function ReportesPage() {
             {/* Rango de Fechas */}
             <div className="space-y-3">
               <Label className="text-base">Rango de Fechas (Para análisis de cobros e ingresos)</Label>
-              <div className="flex gap-4 items-center">
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
                 <div className="grid gap-1.5 flex-1">
                   <Label htmlFor="fechaInicio" className="text-xs text-muted-foreground">Fecha Inicio</Label>
                   <div className="relative">

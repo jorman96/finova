@@ -1,6 +1,6 @@
-# Pagos de capital — entrega de pruebas
+# Pagos de capital
 
-Esta entrega no está autorizada para producción. No modifica automáticamente aportes existentes ni incorpora la contabilidad de la etapa 2.
+El módulo está habilitado en producción para las financieras activas autorizadas en USD. No modifica automáticamente aportes existentes ni incorpora la contabilidad de la etapa 2.
 
 ## Uso
 
@@ -37,3 +37,14 @@ Requiere `FINOVA_CAPITAL_PAYMENTS_ENABLED=true`, `NEXT_PUBLIC_CAPITAL_PAYMENTS_E
 Validación local de esta entrega: 15 pruebas del núcleo, 23 comprobaciones de API, 10 pruebas de reglas, 32 comprobaciones de compatibilidad y 2 pruebas de búsqueda/respaldo, todas satisfactorias. Compilación completa y revisión de tipos satisfactorias. En navegador se verificaron el ingreso ficticio, la navegación, la reserva de USD 400 sobre USD 600 de interés y el formulario de pago. El pago y la restitución se comprobaron con la API en emuladores, sin transferencias reales.
 
 Para abrir la demostración, compilar primero con `npm run test:capital:compile` y ejecutar Firebase CLI con `emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage "node scripts/capital-local-preview.mjs"`. Usar `CI=true` evita la comprobación interactiva de actualizaciones del CLI. La cuenta y contraseña impresas son exclusivamente ficticias; los datos del emulador se pierden al cerrar el entorno.
+
+
+## Capital inicial
+
+El capital inicial es una fuente de fondos ya registrada. Se muestra separado de los intereses y puede vincularse a un plan mediante el origen reservado `finova-initial-capital-v1`. El servidor toma su importe desde `empresa.capitalInicial`, no desde el navegador. Crear el plan no modifica ese campo, no añade una inyección, no aumenta la caja y no crea una obligación automáticamente: requiere la confirmación del dueño. Solo admite un plan por capital inicial y financiera; aportes adicionales conservan su vinculación independiente. No se infiere una fecha de recepción a partir de la creación de la empresa.
+
+## Interfaz adaptable
+
+El encabezado muestra el nombre corto del perfil y su rol real. Usa `nombres` y `apellidos` cuando existen; los perfiles antiguos con un solo `nombre` completo se abreviarán suponiendo dos apellidos, conservando el nombre completo en la ayuda del encabezado. No modifica el nombre almacenado. El cierre de sesión es un icono en el encabezado con etiqueta accesible y confirmación. El menú táctil usa un diálogo con manejo de foco, cierre por Escape y navegación desplazable; se utiliza también en tablets menores de 1024 px.
+
+Los formularios apilan sus columnas en teléfonos, las ventanas limitan su ancho y altura al área visible, las tablas mantienen su propio desplazamiento horizontal y los controles táctiles admiten un mínimo de 44 px. La revisión cubre tamaños de 375, 768 y 1024 px y un caso reducido de 320 px.

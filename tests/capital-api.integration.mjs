@@ -40,6 +40,13 @@ try {
   const agreement = await (await expected('owner creates explicit plan without altering contribution', a, owner, 200)).json();
   assert.equal((await db.doc('empresas/cap-api-a').get()).data().inyeccionesCapital[0].monto, 1000);
   await expected('same injection cannot be duplicated', { ...a, key: crypto.randomUUID() }, owner, 409);
+  const initialPlan = cmd('agreement', { injectionId: 'finova-initial-capital-v1', beneficiary: 'Aportante inicial demo', mode: 'principal_only', cost: 0, monthly: 40000, firstDate: '2026-01-31', reserveBps: 10000, acknowledgedDebt: true });
+  await expected('initial capital creates a plan without another cash contribution', initialPlan, owner, 200);
+  assert.equal((await db.doc('empresas/cap-api-a').get()).data().capitalInicial, 10000);
+  assert.equal((await db.doc('empresas/cap-api-a').get()).data().inyeccionesCapital.length, 1);
+  assert.equal((await (await post('/api/capital/status', {}, owner)).json()).initialCapital, 10000);
+  await expected('initial capital cannot be committed twice', { ...initialPlan, key: crypto.randomUUID() }, owner, 409);
+  await expected('initial capital principal cannot be supplied by the browser', { ...initialPlan, key: crypto.randomUUID(), principal: 1 }, owner, 400);
   const receive = cmd('receive', { loanId: 'capital-api-loan', cents: 70000, method: 'efectivo', note: 'Cobro ficticio' });
   await expected('cross-company collection rejected', receive, foreign, 409);
   const lot = await (await expected('cashier collection records actual proportional interest', receive, cashier, 200)).json(); assert.equal(lot.verified, true); assert.equal(lot.interest, 20000);

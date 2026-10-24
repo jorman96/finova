@@ -128,3 +128,16 @@
     @apply font-sans;
   }
 }
+
+/* Keep wide financial tables inside their own scroller, not the page. */
+.finova-workspace :where(.grid > *, [data-slot="card"], [data-slot="tabs-content"]), [data-slot="dialog-content"] > *, [data-slot="dialog-content"] .grid > * { min-width: 0; }
+.finova-workspace :where(h1, h2, h3, p), [data-slot="dialog-content"] :where(h2, p, label) { overflow-wrap: anywhere; }
+[data-slot="dialog-content"] :where(input, select, textarea), .finova-workspace :where(input, select, textarea) { min-width: 0; max-width: 100%; }
+[data-slot="dialog-content"] { scrollbar-gutter: stable; }
+@media (max-width: 1023px) {
+  .finova-workspace [data-slot="button"], [data-slot="dialog-content"] [data-slot="button"],
+  .finova-workspace [data-slot="select-trigger"], [data-slot="dialog-content"] [data-slot="select-trigger"] { min-height: 2.75rem; }
+  .finova-workspace :where(input, select, textarea), [data-slot="dialog-content"] :where(input, select, textarea) { font-size: 1rem; }
+  [data-slot="tabs-list"] { height: auto; min-height: 3rem; max-width: 100%; overflow-x: auto; }
+  [data-slot="tabs-trigger"] { min-height: 2.75rem; font-size: .75rem; }
+}

@@ -1,4 +1,6 @@
 export class CapitalError extends Error {}
+/** Reserved source identifier; this does not create another cash contribution. */
+export const INITIAL_CAPITAL_ID = 'finova-initial-capital-v1';
 export function add(a: number, b: number) {
   if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || !Number.isSafeInteger(a + b)) throw new CapitalError('Importe fuera del rango exacto admitido.');
   return a + b;

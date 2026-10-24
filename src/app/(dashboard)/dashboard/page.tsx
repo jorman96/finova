@@ -475,7 +475,7 @@ export default function DashboardPage() {
       </div>
 
       {/* 6 Tarjetas en 1 Sola Fila Horizontal en Pantallas Grandes (lg:grid-cols-6) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         {summaryCards.map((card, index) => (
           <Card 
             key={index} 
@@ -495,7 +495,7 @@ export default function DashboardPage() {
               <div className={`text-lg sm:text-xl xl:text-2xl font-bold tracking-tight truncate ${card.alert ? "text-destructive" : ""}`}>
                 {card.value}
               </div>
-              <p className={`text-[11px] mt-1 truncate ${card.alert ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+              <p className={`text-[11px] mt-1 whitespace-normal ${card.alert ? "text-destructive font-medium" : "text-muted-foreground"}`}>
                 {card.trend}
               </p>
             </CardContent>

@@ -281,7 +281,7 @@ export default function InversionistasPage() {
 
       {/* Pestañas de Gestión */}
       <Tabs defaultValue="contratos" className="space-y-4">
-        <TabsList className="grid grid-cols-4 w-full max-w-xl">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-4 h-auto w-full max-w-xl">
           <TabsTrigger value="contratos" className="text-xs">Contratos ({contratos.length})</TabsTrigger>
           <TabsTrigger value="cronograma" className="text-xs">Próximos Pagos ({cuotasOrdenadas.length})</TabsTrigger>
           <TabsTrigger value="directorio" className="text-xs">Inversionistas ({inversionistas.length})</TabsTrigger>
