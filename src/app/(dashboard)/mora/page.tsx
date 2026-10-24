@@ -62,7 +62,16 @@ export default function MoraPage() {
       {loadError && <LoadError message={loadError} />}
       <p className="text-sm text-muted-foreground">Corte operativo: {day} · {clientsInArrears} clientes · Saldo vencido ${balance.toFixed(2)}</p>
       <div className="flex flex-wrap gap-3"><Input aria-label="Buscar cartera vencida" className="max-w-sm" placeholder="Cliente, cédula o teléfono" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} /><select aria-label="Tramo de atraso" className="min-h-11 rounded-md border bg-background px-3 text-sm" value={bucket} onChange={e => { setBucket(e.target.value); setPage(0); }}><option value="todos">Todos los atrasos</option><option value="1-7">1 a 7 días</option><option value="8-30">8 a 30 días</option><option value="31+">Más de 30 días</option></select></div>
-      <div className="border rounded-md bg-card">
+      <div className="space-y-3 md:hidden">
+        {loading ? <p role="status">Calculando morosidad…</p> : !visible.length ? <p className="rounded-lg border p-5 text-sm text-muted-foreground">{loadError ? 'La consulta está incompleta.' : 'No hay cuotas vencidas que coincidan con los filtros.'}</p> : pageItems(visible, page).map(item => <article key={item.cuota.id} className="space-y-3 rounded-xl border bg-card p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold">{item.cliente.nombres} {item.cliente.apellidos}</h3><Badge variant="destructive">{item.diasAtraso} días</Badge></div>
+          <p className="text-sm text-muted-foreground">Cuota #{item.cuota.numeroCuota} · Vencimiento {item.cuota.fechaVencimiento}</p>
+          <p className="text-lg font-semibold">Saldo vencido ${(item.cuota.totalCuota - (item.cuota.montoPagado || 0)).toFixed(2)}</p>
+          {item.cliente.telefonoPrincipal && <a className="inline-flex min-h-11 items-center gap-2 text-sm underline" href={`tel:${item.cliente.telefonoPrincipal}`}><Phone className="size-4" aria-hidden />{item.cliente.telefonoPrincipal}</a>}
+          <div className="flex flex-wrap gap-2"><Link className="inline-flex min-h-11 items-center rounded-md border px-3 text-sm" href={`/prestamos/${item.prestamo.id}`}>Ver crédito</Link><Link className="inline-flex min-h-11 items-center rounded-md border px-3 text-sm" href={`/gestion?cliente=${item.cliente.id}`}>Crear gestión</Link></div>
+        </article>)}
+      </div>
+      <div className="hidden border rounded-md bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
