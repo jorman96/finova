@@ -17,8 +17,9 @@ const schema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('reserve'), agreementId: id, installmentId: id, lots: z.array(z.object({ id, cents: money }).strict()).min(1).max(25) }).strict(),
   z.object({ ...base, type: z.literal('release'), reserveId: id, reason }).strict(),
   z.object({ ...base, type: z.literal('restrict'), lotId: id, cents: money, reason }).strict(),
+  z.object({ ...base, type: z.literal('restrictMany'), lots: z.array(z.object({ id, cents: money }).strict()).min(1).max(200), reason }).strict(),
   z.object({ ...base, type: z.literal('unrestrict'), restrictionId: id, reason }).strict(),
-  z.object({ ...base, type: z.literal('pay'), agreementId: id, installmentId: id, cents: money, source: z.string().regex(/^(cash|bank:[\w-]{1,128})$/), date, reference, proofUrl, confirmedCashAvailable: z.literal(true) }).strict(),
+  z.object({ ...base, type: z.literal('pay'), agreementId: id, installmentId: id, cents: money, source: z.string().regex(/^(general_cash|external|cash|bank:[\w-]{1,128})$/), date, reference, proofUrl, confirmedCashAvailable: z.literal(true) }).strict(),
   z.object({ ...base, type: z.literal('reverse'), payoutId: id, date, reason, reference, proofUrl, confirmedReturned: z.literal(true) }).strict(),
 ]);
 export async function POST(request: Request) {

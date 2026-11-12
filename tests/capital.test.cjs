@@ -173,3 +173,48 @@ test('receipt preview respects zero-paid, verified partials and unknown legacy s
  assert.equal(previewReceipt([{...first,montoPagado:60}],6000).verified,false);
  assert.throws(()=>previewReceipt([first],12001));
 });
+
+test('general cash payout preserves reserved interest, debits cash and restores only cash on reversal', async () => {
+  const f = await fixture(), receipt = await collect(f), p = await plan(f);
+  await reserve(f, p, receipt.id, 10000);
+  await assert.rejects(execute(f.actor, payout(p, 31000, { source: 'general_cash' })), /sin reservar/);
+  const pay = payout(p, 25000, { source: 'general_cash' });
+  const result = await execute(f.actor, pay);
+  assert.equal((await execute(f.actor, pay)).repeated, true);
+  let t = await totals(f);
+  assert.equal(t.outflow, 25000); assert.equal(t.reserved, 10000); assert.equal(t.spent, 0);
+  assert.equal((await f.base.collection('installments').doc(p.due).get()).data().paid, 25000);
+  await execute(f.actor, command('reverse', { payoutId: result.id, date: today(), reason: 'Restitución de prueba', reference: 'Prueba', confirmedReturned: true }));
+  t = await totals(f);
+  assert.equal(t.outflow, 0); assert.equal(t.reserved, 10000); assert.equal(t.spent, 0);
+  assert.equal((await f.base.collection('installments').doc(p.due).get()).data().paid, 0);
+});
+
+test('external payment and reversal change the commitment even with insufficient recorded cash', async () => {
+  const f = await fixture(), p = await plan(f);
+  await db.doc('prestamos/' + f.loanId).update({ monto: 10000 });
+  await assert.rejects(execute(f.actor, payout(p, 15000, { source: 'general_cash' })), /caja registrada libre/);
+  const result = await execute(f.actor, payout(p, 15000, { source: 'external' }));
+  assert.equal((await totals(f)).outflow, 0);
+  assert.equal((await f.base.collection('agreements').doc(p.id).get()).data().principalPaid, 15000);
+  await execute(f.actor, command('reverse', { payoutId: result.id, date: today(), reason: 'Restitución de prueba', reference: 'Prueba', confirmedReturned: true }));
+  assert.equal((await totals(f)).outflow, 0); assert.equal((await totals(f)).reserved, 0);
+  assert.equal((await f.base.collection('agreements').doc(p.id).get()).data().principalPaid, 0);
+});
+
+test('one expense earmark combines receipts atomically and releases the exact amounts', async () => {
+  const f = await fixture();
+  const first = await collect(f, { cents: 80000 }), second = await collect(f, { cents: 80000 });
+  const lots = [{ id: first.id, cents: 30000 }, { id: second.id, cents: 5000 }];
+  const c = command('restrictMany', { lots, reason: 'Apartado de prueba' });
+  const result = await execute(f.actor, c);
+  assert.equal((await execute(f.actor, c)).repeated, true);
+  assert.equal((await totals(f)).restricted, 35000);
+  assert.equal((await totals(f)).outflow, 0);
+  await assert.rejects(execute(f.actor, command('restrictMany', { lots: [lots[0], lots[0]], reason: 'Duplicado de prueba' })), /inválidos/);
+  await assert.rejects(execute(f.actor, command('restrictMany', { lots: [{ ...lots[0], cents: 1 }, { ...lots[1], cents: 30000 }], reason: 'Saldo de prueba' })), /interés disponible/);
+  assert.equal((await f.base.collection('lots').doc(first.id).get()).data().restricted, 30000);
+  await execute(f.actor, command('unrestrict', { restrictionId: result.id, reason: 'Cancelar apartado de prueba' }));
+  assert.equal((await totals(f)).restricted, 0);
+  for (const lot of lots) assert.equal((await f.base.collection('lots').doc(lot.id).get()).data().restricted, 0);
+});

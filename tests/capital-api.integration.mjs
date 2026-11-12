@@ -73,6 +73,26 @@ try {
   await expected('restitution restores reservations without erasing payment', reversed, owner, 200);
   assert.equal((await base.get()).data().outflow, 0); assert.equal((await base.get()).data().reserved, 20000);
   assert.equal((await base.collection('payouts').doc(payout.id).get()).data().reversed, true);
+  const status = async () => (await post('/api/capital/status', {}, owner)).json();
+  const cashBefore = (await status()).recordedCash;
+  assert.ok(Number.isSafeInteger(cashBefore) && cashBefore > 10000);
+  const fromCash = { ...pay, key: crypto.randomUUID(), cents: 5000, source: 'general_cash', reference: 'CAJA-DEMO-001' };
+  await expected('direct cash payout is restricted to managers', fromCash, cashier, 403);
+  await expected('direct cash payout records its origin', fromCash, owner, 200);
+  const fromOutside = { ...pay, key: crypto.randomUUID(), cents: 5000, source: 'external', reference: 'EXT-DEMO-001' };
+  await expected('external payout records its origin without touching cash', fromOutside, owner, 200);
+  const after = await status();
+  assert.equal(after.recordedCash, cashBefore - 5000);
+  assert.equal(after.totals.reserved, 20000);
+  assert.equal(after.installments.find(row => row.id === installmentId).paid, 10000);
+  assert.ok(after.payouts.some(row => row.source === 'general_cash'));
+  assert.ok(after.payouts.some(row => row.source === 'external'));
+  const restricted = await (await expected('earmark cannot reuse funds already reserved', cmd('restrictMany', { lots: [{ id: lot.id, cents: 1000 }], reason: 'Gastos de prueba' }), owner, 409)).json();
+  assert.ok(restricted.error);
+  const managerSummary = await (await post('/api/capital/summary', {}, owner)).json();
+  assert.equal(managerSummary.restricted, 0);
+  assert.equal(managerSummary.interestAvailable, 0);
+  assert.equal('interestAvailable' in summary, false);
   console.log('Completed ' + count + ' capital API checks.');
 } catch (e) { console.error(e); console.error(logs); process.exitCode = 1; }
 finally { child.kill(); await db.terminate(); await deleteApp(app); }

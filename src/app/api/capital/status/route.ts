@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { apiError, requireActor } from '@/lib/server-auth';
+import { recordedCash } from '@/lib/capital/service';
 import { managers } from '@/lib/permissions';
 export async function POST(request: Request) {
   try {
@@ -13,7 +14,9 @@ export async function POST(request: Request) {
       const lists = await Promise.all(names.map(name => tx.get(base.collection(name).limit(name === 'installments' || name === 'claims' ? 501 : 201))));
       const data = Object.fromEntries(names.map((name, index) => [name, lists[index].docs.slice(0, name === 'installments' || name === 'claims' ? 500 : 200).map(d => ({ ...d.data(), id: d.id }))]));
       const truncated = lists.some((list, index) => list.size > (names[index] === 'installments' || names[index] === 'claims' ? 500 : 200));
-      return { empresaId: actor.empresaId, enabled, currency: 'USD', policy: 'proporcional-v1', totals: totals.data() || {}, initialCapital: company.data()?.capitalInicial || 0, injections: company.data()?.inyeccionesCapital || [], banks: company.data()?.cuentasBancarias || [], truncated, ...data };
+      // Legacy records can prevent reconciling cash; keep the read-only view available.
+      const cash = enabled ? await recordedCash(tx, adminDb, actor.empresaId, company.data() || {}, totals.data() || {}).catch(() => null) : null;
+      return { recordedCash: cash, empresaId: actor.empresaId, enabled, currency: 'USD', policy: 'proporcional-v1', totals: totals.data() || {}, initialCapital: company.data()?.capitalInicial || 0, injections: company.data()?.inyeccionesCapital || [], banks: company.data()?.cuentasBancarias || [], truncated, ...data };
     }, { readOnly: true });
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) { return apiError(error); }

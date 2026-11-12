@@ -60,11 +60,11 @@ export default function DashboardPage() {
   const [rawInversiones, setRawInversiones] = useState<any[]>([]);
   const [rawCuotasInversionistas, setRawCuotasInversionistas] = useState<any[]>([]);
   const [rawPagosInversionistas, setRawPagosInversionistas] = useState<any[]>([]);
-  const [capitalSummary, setCapitalSummary] = useState<{ empresaId: string; enabled: boolean; outflow: number; reserved: number } | null>(null);
+  const [capitalSummary, setCapitalSummary] = useState<{ empresaId: string; enabled: boolean; outflow: number; reserved: number; restricted: number; interestAvailable: number } | null>(null);
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED !== 'true' || !userData?.empresaId) return;
     let active = true;
-    const update = () => { apiPost<{ empresaId: string; enabled: boolean; outflow: number; reserved: number }>('/api/capital/summary', {}).then(value => { if (active) setCapitalSummary(value); }).catch(() => { if (active) setCapitalSummary(null); }); };
+    const update = () => { apiPost<{ empresaId: string; enabled: boolean; outflow: number; reserved: number; restricted: number; interestAvailable: number }>('/api/capital/summary', {}).then(value => { if (active) setCapitalSummary(value); }).catch(() => { if (active) setCapitalSummary(null); }); };
     update(); window.addEventListener('focus', update); window.addEventListener('finova-capital-updated', update);
     return () => { active = false; window.removeEventListener('focus', update); window.removeEventListener('finova-capital-updated', update); };
   }, [userData?.empresaId]);
@@ -471,6 +471,15 @@ export default function DashboardPage() {
 
       <div className="flex flex-wrap gap-2"><Link href="/mora" className="rounded-lg border bg-card px-4 py-3 text-sm hover:bg-muted">Revisar cuotas vencidas</Link><Link href="/prestamos" className="rounded-lg border bg-card px-4 py-3 text-sm hover:bg-muted">Consultar créditos</Link>{['dueño','admin','superadmin'].includes(userData?.rol || '') && <Link href="/capital" className="rounded-lg border bg-card px-4 py-3 text-sm hover:bg-muted">Revisar compromisos de capital</Link>}</div>
       <p className="text-sm text-muted-foreground">Capital propio, caja registrada y mora son saldos actuales. Los desembolsos, cobros e intereses proyectados corresponden al período seleccionado. La caja registrada requiere conciliación y puede incluir reservas.</p>
+      {capitalTotals?.enabled && ['superadmin', 'dueño', 'admin'].includes(userData?.rol || '') && <section aria-label="Desglose de caja" className="rounded-xl border bg-card p-4 space-y-3">
+        <h2 className="font-semibold">Qué hay en caja</h2>
+        <dl className="grid gap-3 sm:grid-cols-3 text-sm">
+          <div><dt>Caja registrada</dt><dd className="text-xl font-semibold">{filteredMetrics.cajaDisponible.toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</dd></div>
+          <div><dt>Fondos apartados y reservados</dt><dd className="text-xl font-semibold">{((capitalTotals.restricted + capitalTotals.reserved) / 100).toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</dd></div>
+          <div><dt>Intereses cobrados sin asignar</dt><dd className="text-xl font-semibold">{(capitalTotals.interestAvailable / 100).toLocaleString('es-EC', { style: 'currency', currency: 'USD' })}</dd></div>
+        </dl>
+        <p className="text-sm text-muted-foreground">Los intereses cobrados ya forman parte de la caja registrada. Los fondos apartados siguen en caja, pero se guardan para otro uso.</p>
+      </section>}
       {/* Indicador del Período Activo */}
       <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
         <div className="flex items-center gap-1.5">

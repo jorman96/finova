@@ -12,6 +12,7 @@ export type CapitalCommand = Base & (
   | { type: 'reserve'; agreementId: string; installmentId: string; lots: { id: string; cents: number }[] }
   | { type: 'release'; reserveId: string; reason: string }
   | { type: 'restrict'; lotId: string; cents: number; reason: string }
+  | { type: 'restrictMany'; lots: { id: string; cents: number }[]; reason: string }
   | { type: 'unrestrict'; restrictionId: string; reason: string }
   | { type: 'pay'; agreementId: string; installmentId: string; cents: number; source: string; date: string; reference: string; proofUrl?: string; confirmedCashAvailable: true }
   | { type: 'reverse'; payoutId: string; date: string; reason: string; reference: string; proofUrl?: string; confirmedReturned: true }
@@ -20,7 +21,7 @@ export function safeId(id: string) { if (!/^[\w-]{1,128}$/.test(id)) throw new C
 export const digest = (data: unknown) => createHash('sha256').update(JSON.stringify(data)).digest('hex');
 const sum = (numbers: number[]) => numbers.reduce(add, 0);
 const dollars = (n: number) => n / 100;
-async function recordedCash(tx: Transaction, db: Firestore, empresaId: string, company: DocumentData, control: DocumentData) {
+export async function recordedCash(tx: Transaction, db: Firestore, empresaId: string, company: DocumentData, control: DocumentData) {
   const [loans, payments, investments, investorPayments] = await Promise.all(['prestamos', 'pagos', 'inversion_contratos', 'pagos_inversionistas'].map(c => tx.get(db.collection(c).where('empresaId', '==', empresaId))));
   return sum([amount(company.capitalInicial || 0, true), sum((company.inyeccionesCapital || []).map((i: { monto: unknown }) => amount(i.monto))), sum(investments.docs.map(d => amount(d.data().montoCartera || 0, true))), -sum(loans.docs.map(d => amount(d.data().monto))), sum(payments.docs.filter(d => !d.data().anulado).map(d => amount(d.data().monto))), -sum(investorPayments.docs.map(d => amount(d.data().monto))), -(control.outflow || 0)]);
 }
@@ -57,7 +58,7 @@ export function capitalService(db: Firestore) {
         const link = await tx.get(base.collection('injection_links').doc(command.contributionId));
         if (!c || c.returned || link.exists || !command.confirmedReturned || !command.reason.trim() || !command.reference.trim()) throw new CapitalError('Solo se puede restituir un aporte nuevo sin plan asociado, con devolución real confirmada.');
         const cash = await recordedCash(tx, db, actor.empresaId, company, control);
-        if (cash - (control.reserved || 0) < c.amount) throw new CapitalError('La caja libre no alcanza para devolver el aporte.');
+        if (cash - (control.reserved || 0) - (control.restricted || 0) < c.amount) throw new CapitalError('La caja libre no alcanza para devolver el aporte.');
         tx.update(original.ref, { returned: true, returnOperation: opId });
         tx.create(base.collection('contribution_returns').doc(opId), { ...meta, contributionId: original.id, amount: c.amount, reason: command.reason, reference: command.reference });
         delta.outflow = c.amount;
@@ -128,7 +129,7 @@ export function capitalService(db: Firestore) {
         const claims = await Promise.all(command.lots.map(l => tx.get(base.collection('claims').doc(l.id + '_' + command.agreementId))));
         const total = sum(command.lots.map(l => positive(l.cents)));
         if (total > installment.total - installment.paid - installment.reserved) throw new CapitalError('La reserva supera lo pendiente de esta cuota.');
-        if ((await recordedCash(tx, db, actor.empresaId, company, control)) - (control.reserved || 0) < total) throw new CapitalError('La caja registrada libre no cubre esta reserva; concilia los fondos.');
+        if ((await recordedCash(tx, db, actor.empresaId, company, control)) - (control.reserved || 0) - (control.restricted || 0) < total) throw new CapitalError('La caja registrada libre no cubre esta reserva; concilia los fondos.');
         for (let i = 0; i < lots.length; i++) {
           const lot = lots[i].data(), take = command.lots[i].cents, used = claims[i].data()?.used || 0;
           if (!lot || take > lot.interest - lot.reserved - lot.spent - lot.restricted || used + take > percentage(lot.interest, agreement.reserveBps)) throw new CapitalError('Intereses insuficientes, comprometidos o fuera del porcentaje permitido.');
@@ -149,29 +150,51 @@ export function capitalService(db: Firestore) {
         tx.update(claim.ref, { used: claim.data()!.used - data.remaining });
         tx.update(agreement.ref, { reserved: agreement.data()!.reserved - data.remaining }); tx.update(installment.ref, { reserved: installment.data()!.reserved - data.remaining });
         delta.reserved = -data.remaining;
-      } else if (command.type === 'restrict' || command.type === 'unrestrict') {
-        const restriction = command.type === 'unrestrict' ? await tx.get(base.collection('restrictions').doc(safeId(command.restrictionId))) : null;
-        const data = restriction?.data();
-        if (command.type === 'unrestrict' && (!data || data.released)) throw new CapitalError('El apartado ya fue liberado o no existe.');
-        const lot = await tx.get(base.collection('lots').doc(safeId(command.type === 'restrict' ? command.lotId : data!.lotId))), l = lot.data();
-        const take = command.type === 'restrict' ? positive(command.cents) : data!.amount;
-        if (!l || !command.reason.trim() || (command.type === 'restrict' && take > l.interest - l.reserved - l.spent - l.restricted)) throw new CapitalError('Intereses insuficientes o motivo inválido.');
-        const sign = command.type === 'restrict' ? 1 : -1;
-        tx.update(lot.ref, { restricted: add(l.restricted, sign * take) });
+      } else if (command.type === 'restrict' || command.type === 'restrictMany' || command.type === 'unrestrict') {
+        const release = command.type === 'unrestrict';
+        const restriction = release ? await tx.get(base.collection('restrictions').doc(safeId(command.restrictionId))) : null;
+        const previous = restriction?.data();
+        if (release && (!previous || previous.released)) throw new CapitalError('El apartado ya fue liberado o no existe.');
+        const allocations: { id: string; cents: number }[] = release
+          ? previous!.allocations || [{ id: previous!.lotId, cents: previous!.amount }]
+          : command.type === 'restrictMany' ? command.lots : [{ id: command.lotId, cents: command.cents }];
+        if (!command.reason.trim() || !allocations.length || allocations.length > 200 || new Set(allocations.map(a => a.id)).size !== allocations.length) throw new CapitalError('Cobros o motivo inválidos.');
+        const total = sum(allocations.map(a => positive(a.cents)));
+        const lots = await Promise.all(allocations.map(a => tx.get(base.collection('lots').doc(safeId(a.id)))));
+        if (!release && (await recordedCash(tx, db, actor.empresaId, company, control)) - (control.reserved || 0) - (control.restricted || 0) < total) throw new CapitalError('La caja registrada libre no cubre el apartado.');
+        lots.forEach((lot, index) => {
+          const l = lot.data(), take = allocations[index].cents;
+          if (!l || (release ? take > l.restricted : take > l.interest - l.reserved - l.spent - l.restricted)) throw new CapitalError('El interés disponible cambió. Actualiza la pantalla y vuelve a revisar el desglose.');
+          tx.update(lot.ref, { restricted: add(l.restricted, release ? -take : take) });
+        });
         if (restriction) tx.update(restriction.ref, { released: true, releasedBy: opId });
-        else tx.create(base.collection('restrictions').doc(opId), { ...meta, lotId: lot.id, amount: take, reason: command.reason, released: false });
-        delta.restricted = sign * take;
+        else tx.create(base.collection('restrictions').doc(opId), { ...meta, allocations, amount: total, reason: command.reason, released: false });
+        delta.restricted = release ? -total : total;
       } else if (command.type === 'pay') {
         positive(command.cents);
         if (!command.confirmedCashAvailable || !validDate(command.date) || command.date > day || !command.reference.trim()) throw new CapitalError('Confirma disponibilidad de caja/banco, fecha y comprobante.');
-        const [agreementSnap, installmentSnap, reserves] = await Promise.all([tx.get(base.collection('agreements').doc(safeId(command.agreementId))), tx.get(base.collection('installments').doc(safeId(command.installmentId))), tx.get(base.collection('reserves').where('installmentId', '==', command.installmentId))]);
+        const external = command.source === 'external';
+        const general = command.source === 'general_cash';
+        const fromReserve = !external && !general;
+        if (fromReserve && !/^(cash|bank:[\w-]{1,128})$/.test(command.source)) throw new CapitalError('Origen de pago inválido.');
+        const [agreementSnap, installmentSnap, reserves] = await Promise.all([
+          tx.get(base.collection('agreements').doc(safeId(command.agreementId))),
+          tx.get(base.collection('installments').doc(safeId(command.installmentId))),
+          fromReserve ? tx.get(base.collection('reserves').where('installmentId', '==', command.installmentId)) : null,
+        ]);
         const agreement = agreementSnap.data(), installment = installmentSnap.data();
-        if (!agreement || installment?.agreementId !== command.agreementId || command.cents > installment.total - installment.paid || command.cents > installment.reserved || reserves.size > 100) throw new CapitalError('Cuota sin reserva suficiente o fuera de límite.');
-        const eligible = reserves.docs.filter(d => d.data().remaining > 0 && d.data().source === command.source).sort((a, b) => a.id.localeCompare(b.id));
-        if (sum(eligible.map(d => d.data().remaining)) < command.cents || eligible.some(d => (d.data().availableFrom || d.data().date) > command.date)) throw new CapitalError('No hay reservas de esa caja/banco para la fecha indicada.');
+        if (!agreement || agreement.state !== 'active' || installment?.agreementId !== command.agreementId || command.cents > installment.total - installment.paid) throw new CapitalError('El importe supera el saldo pendiente de la cuota.');
+        if (fromReserve && (command.cents > installment.reserved || (reserves?.size || 0) > 100)) throw new CapitalError('La cuota no tiene reserva suficiente.');
+        if (!fromReserve && command.cents > installment.total - installment.paid - installment.reserved) throw new CapitalError('El importe supera el saldo sin reservar de la cuota. Usa o libera la reserva antes de pagar esa parte.');
+        const eligible = (reserves?.docs || []).filter(d => d.data().remaining > 0 && d.data().source === command.source && (d.data().availableFrom || d.data().date) <= command.date).sort((a, b) => a.id.localeCompare(b.id));
+        if (fromReserve && sum(eligible.map(d => d.data().remaining)) < command.cents) throw new CapitalError('No hay reservas suficientes de esa caja/banco para la fecha indicada.');
         const lots = await Promise.all([...new Set(eligible.map(d => d.data().lotId))].map(id => tx.get(base.collection('lots').doc(id))));
-        const cash = await recordedCash(tx, db, actor.empresaId, company, control);
-        if (cash < Math.max(command.cents, control.reserved || 0)) throw new CapitalError('La caja registrada no alcanza. Concilia fondos antes de confirmar.');
+        if (!external) {
+          const cash = await recordedCash(tx, db, actor.empresaId, company, control);
+          const required = general ? add(add(command.cents, control.reserved || 0), control.restricted || 0) : add(Math.max(command.cents, control.reserved || 0), control.restricted || 0);
+          if (cash < required) throw new CapitalError('La caja registrada libre no alcanza para este pago; revisa las reservas y los apartados.');
+        }
+        const usedReserve = fromReserve ? command.cents : 0;
         const interestPaid = share(installment.paid + command.cents, installment.financeCost, installment.total) - share(installment.paid, installment.financeCost, installment.total);
         let remaining = command.cents;
         const consumed: { reserveId: string; lotId: string; cents: number }[] = [], lotChanges = new Map<string, number>();
@@ -182,10 +205,10 @@ export function capitalService(db: Firestore) {
           tx.update(reserve.ref, { remaining: reserve.data().remaining - take }); remaining -= take;
         }
         for (const lot of lots) { const take = lotChanges.get(lot.id) || 0; tx.update(lot.ref, { reserved: lot.data()!.reserved - take, spent: add(lot.data()!.spent, take) }); }
-        tx.update(installmentSnap.ref, { paid: add(installment.paid, command.cents), reserved: installment.reserved - command.cents, lastPayoutId: opId });
-        tx.update(agreementSnap.ref, { paid: add(agreement.paid, command.cents), principalPaid: add(agreement.principalPaid, command.cents - interestPaid), financeCostPaid: add(agreement.financeCostPaid, interestPaid), reserved: agreement.reserved - command.cents, state: agreement.paid + command.cents === agreement.total ? 'paid' : 'active' });
+        tx.update(installmentSnap.ref, { paid: add(installment.paid, command.cents), reserved: installment.reserved - usedReserve, lastPayoutId: opId });
+        tx.update(agreementSnap.ref, { paid: add(agreement.paid, command.cents), principalPaid: add(agreement.principalPaid, command.cents - interestPaid), financeCostPaid: add(agreement.financeCostPaid, interestPaid), reserved: agreement.reserved - usedReserve, state: agreement.paid + command.cents === agreement.total ? 'paid' : 'active' });
         tx.create(base.collection('payouts').doc(opId), { ...meta, date: command.date, agreementId: command.agreementId, installmentId: command.installmentId, amount: command.cents, principal: command.cents - interestPaid, financeCost: interestPaid, source: command.source, reference: command.reference.trim(), proofUrl: command.proofUrl || null, consumed, previousPayoutId: installment.lastPayoutId || null, reversed: false });
-        delta.outflow = command.cents; delta.spent = command.cents; delta.reserved = -command.cents;
+        delta.outflow = external ? 0 : command.cents; delta.spent = usedReserve; delta.reserved = -usedReserve;
       } else if (command.type === 'reverse') {
         const payout = await tx.get(base.collection('payouts').doc(safeId(command.payoutId))), p = payout.data();
         if (!p || p.reversed || !command.confirmedReturned || !command.reason.trim() || !command.reference.trim() || !validDate(command.date) || command.date < p.date || command.date > day) throw new CapitalError('Confirma la restitución del dinero y un comprobante válido.');
@@ -197,12 +220,12 @@ export function capitalService(db: Firestore) {
         const changes = new Map<string, number>();
         consumed.forEach((c, i) => { tx.update(reserves[i].ref, { remaining: add(reserves[i].data()!.remaining, c.cents), availableFrom: command.date }); changes.set(c.lotId, add(changes.get(c.lotId) || 0, c.cents)); });
         for (const lot of lots) { const take = changes.get(lot.id)!; tx.update(lot.ref, { reserved: add(lot.data()!.reserved, take), spent: lot.data()!.spent - take }); }
-        const a = agreement.data()!, i = installment.data()!;
-        tx.update(agreement.ref, { paid: a.paid - p.amount, principalPaid: a.principalPaid - p.principal, financeCostPaid: a.financeCostPaid - p.financeCost, reserved: add(a.reserved, p.amount), state: 'active' });
-        tx.update(installment.ref, { paid: i.paid - p.amount, reserved: add(i.reserved, p.amount), lastPayoutId: p.previousPayoutId });
+        const a = agreement.data()!, i = installment.data()!, restoredReserve = sum(consumed.map(c => c.cents));
+        tx.update(agreement.ref, { paid: a.paid - p.amount, principalPaid: a.principalPaid - p.principal, financeCostPaid: a.financeCostPaid - p.financeCost, reserved: add(a.reserved, restoredReserve), state: 'active' });
+        tx.update(installment.ref, { paid: i.paid - p.amount, reserved: add(i.reserved, restoredReserve), lastPayoutId: p.previousPayoutId });
         tx.update(payout.ref, { reversed: true, reversalId: opId });
         tx.create(base.collection('reversals').doc(opId), { ...meta, date: command.date, payoutId: payout.id, reason: command.reason, reference: command.reference, proofUrl: command.proofUrl || null, amount: p.amount });
-        delta.outflow = -p.amount; delta.spent = -p.amount; delta.reserved = p.amount;
+        delta.outflow = p.source === 'external' ? 0 : -p.amount; delta.spent = -restoredReserve; delta.reserved = restoredReserve;
       }
       const next: Record<string, unknown> = { currency: 'USD', updatedAt: FieldValue.serverTimestamp() };
       for (const name of ['collected', 'reserved', 'spent', 'restricted', 'outflow', 'unverifiedReceipts']) {

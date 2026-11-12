@@ -7,9 +7,15 @@ El módulo está habilitado en producción para las financieras activas autoriza
 1. Registrar el aporte realmente recibido, con referencia y confirmación del ingreso. Un aporte existente también puede vincularse sin volver a ingresarlo a caja.
 2. Crear un plan: beneficiario, cuota mensual (por ejemplo USD 400), primer vencimiento y porcentaje de intereses elegibles que puede destinarse al compromiso.
 3. Declarar si se devuelve solamente capital o capital más un costo total pactado. No se calcula una tasa financiera: el calendario distribuye proporcionalmente el total declarado y ajusta la última cuota.
-4. Reservar intereses de cobros verificados. Reservar no registra una salida de dinero.
-5. Después del desembolso real, registrar el pago, su fecha, origen, referencia y comprobante opcional. El sistema reduce la obligación y registra la salida.
-6. Una restitución requiere que el dinero haya regresado realmente. Conserva el pago original y exige motivo y referencia; las restituciones de una cuota se realizan en orden inverso.
+4. Para pagar con intereses, consulta el máximo reservable y aparta intereses de cobros verificados. Reservar no registra una salida de dinero.
+5. Después del desembolso real, registra el pago o abono, su fecha, origen, referencia y comprobante opcional. El importe siempre reduce la obligación:
+   - **Interés reservado**: consume la reserva de la caja o banco elegido y descuenta el importe de la caja registrada.
+   - **Caja registrada**: descuenta el importe del saldo general libre, respetando reservas y apartados existentes. No consume intereses reservados.
+   - **Dinero externo**: registra un pago cubierto fuera de los fondos registrados. No genera entrada ni salida de caja.
+6. Los dos orígenes sin reserva solo cubren la parte no reservada de la cuota. Para la parte reservada, utiliza la reserva o libérala con motivo antes de registrar el pago desde otro origen.
+7. Una restitución requiere que el dinero haya regresado realmente. Conserva el pago original, exige motivo y referencia y deshace el efecto del origen original. Las restituciones de una cuota se realizan en orden inverso.
+
+Para apartar dinero para gastos o liquidez, escribe el total. Finova muestra el máximo y el desglose entre cobros elegibles antes de confirmar. Se guarda un solo apartado que puede liberarse completo con un motivo. Inicio muestra caja, fondos apartados o reservados e intereses sin asignar; estos importes son partes del saldo registrado y no se suman a él.
 
 ## Integridad
 
