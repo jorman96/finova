@@ -7,7 +7,7 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 export interface Actor { uid: string; empresaId: string; rol: Role; nombre: string }
-export async function requireActor(request: Request, allowed: readonly Role[] = roles): Promise<Actor> {
+export async function requireActor(request: Request, allowed: readonly Role[] = roles, options: { allowSuspended?: boolean } = {}): Promise<Actor> {
   const token = request.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
   if (!token) throw new ApiError(401, "Inicia sesión para continuar.");
   const decoded = await adminAuth.verifyIdToken(token, true).catch(() => { throw new ApiError(401, "Sesión vencida o revocada."); });
@@ -16,7 +16,7 @@ export async function requireActor(request: Request, allowed: readonly Role[] = 
   if (!user || (user.activo !== undefined && user.activo !== true) || !allowed.includes(user.rol)) throw new ApiError(403, "No tienes permiso para esta operación.");
   if (user.rol !== "superadmin") {
     const empresa = await adminDb.collection("empresas").doc(user.empresaId).get();
-    if (empresa.data()?.estado !== "activa") throw new ApiError(403, "Empresa suspendida o no disponible.");
+    if (empresa.data()?.estado !== "activa" && !(options.allowSuspended && empresa.data()?.estado === "suspendida")) throw new ApiError(403, "Empresa suspendida o no disponible.");
   }
   return { uid: decoded.uid, empresaId: user.empresaId, rol: user.rol, nombre: user.nombre || decoded.uid };
 }

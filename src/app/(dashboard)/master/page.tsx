@@ -1,5 +1,6 @@
 "use client";
 
+import { SecurityReset } from '@/components/admin/SecurityReset';
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { collection, query, getDocs, addDoc, serverTimestamp, doc, updateDoc, getCountFromServer, where } from "firebase/firestore";
@@ -482,6 +483,7 @@ export default function MasterPanelPage() {
                           <Button variant="outline" size="sm" disabled={emp.estado !== 'activa'} title={emp.estado !== 'activa' ? 'Activa la financiera para crear accesos.' : 'Crear una cuenta de dueño o administrador.'} onClick={() => { setSelectedEmpresaId(emp.id); setOpenUserModal(true); }}>
                             <UserPlus className="mr-2 h-4 w-4" /> Crear acceso
                           </Button>
+                        <SecurityReset empresaId={emp.id} nombre={emp.nombre} />
                         <Button variant={emp.estado === 'activa' ? 'destructive' : 'default'} size="sm" onClick={() => { setStatusReason(''); setPendingStatus({ id: emp.id, nombre: emp.nombre, estado: emp.estado }); }}>
                           {emp.estado === 'activa' ? (
                             <><PauseCircle className="mr-2 h-4 w-4" /> Suspender</>

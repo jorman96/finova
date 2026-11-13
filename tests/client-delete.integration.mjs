@@ -93,5 +93,47 @@ try{
  const nextTasks=await (await api('/api/gestion',{action:'list',cursor:firstTasks.next},owner)).json();assert.equal(nextTasks.items.length,2);assert.equal(new Set([...firstTasks.items,...nextTasks.items].map(t=>t.id)).size,22);count++;
  for(const path of ['/api/accounting/status','/api/accounting/commands']) {assert.equal((await api(path,{},owner)).status,404);count++;}
  console.log('PASS operational agenda isolates assignees, paginates, prevents duplicates and never changes financial records');
+ const resetPath='/api/admin/borrado-seguridad';
+ const reset=(action,token,fields={})=>api(resetPath,{action,empresaId:'reset-fixture',...fields},token);
+ await db.doc('empresas/reset-fixture').set({estado:'activa',nombre:'Financiera ficticia',capitalInicial:900});
+ const resetOwner=await user('resetOwner','dueño','reset-fixture',true);
+ await db.doc('clientes/reset-fixture-client').set({empresaId:'reset-fixture',nombres:'Ejemplo'});
+ await db.doc('clientes/reset-other-client').set({empresaId:'b',nombres:'Otro'});
+ await db.doc('prestamos/reset-fixture-loan').set({empresaId:'reset-fixture',clienteId:'reset-fixture-client'});
+ await db.doc('cuotas/reset-fixture-quota').set({empresaId:'reset-fixture',prestamoId:'reset-fixture-loan'});
+ const requestReset={categories:['clients'],reason:'Solicitud de limpieza ficticia',confirmed:true};
+ async function expectReset(action,token,want,fields={}) { const r=await reset(action,token,fields); assert.equal(r.status,want,await r.clone().text()); count++; return r.json(); }
+ await expectReset('request',platform,403,requestReset);
+ await expectReset('request',other,403,requestReset);
+ await expectReset('preview',platform,409);
+ await expectReset('request',resetOwner,200,requestReset);
+ await expectReset('preview',platform,409);
+ await db.doc('empresas/reset-fixture').update({estado:'suspendida'});
+ await expectReset('preview',platform,409);
+ await expectReset('cancel',resetOwner,200);
+ await db.doc('empresas/reset-fixture').update({estado:'activa'});
+ await expectReset('request',resetOwner,200,{...requestReset,categories:['clients','loans']});
+ await db.doc('empresas/reset-fixture').update({estado:'suspendida'});
+ await expectReset('execute',resetOwner,403,{preview:'0'.repeat(64),confirmation:'BORRAR reset-fixture'});
+ const preview=await expectReset('preview',platform,200);
+ assert.deepEqual(preview.counts,{clients:1,loans:2});
+ await db.doc('cuotas/reset-fixture-quota').update({changed:true});
+ await expectReset('execute',platform,409,{preview:preview.preview,confirmation:'BORRAR reset-fixture'});
+ const current=await expectReset('preview',platform,200);
+ const executeReset={preview:current.preview,confirmation:'BORRAR reset-fixture'};
+ await expectReset('execute',platform,409,{...executeReset,confirmation:'BORRAR b'});
+ const races=await Promise.all([reset('execute',platform,executeReset),reset('execute',platform,executeReset)]);
+ assert.deepEqual(races.map(r=>r.status).sort(),[200,409]); count+=2;
+ assert.equal((await db.doc('clientes/reset-fixture-client').get()).exists,false);
+ assert.equal((await db.doc('prestamos/reset-fixture-loan').get()).exists,false);
+ assert.equal((await db.doc('cuotas/reset-fixture-quota').get()).exists,false);
+ assert.equal((await db.doc('clientes/reset-other-client').get()).exists,true);
+ assert.equal((await db.doc('usuarios/resetOwner').get()).exists,true);
+ assert.equal((await db.doc('empresas/reset-fixture').get()).data().capitalInicial,900);
+ assert.equal((await db.doc('empresas/reset-fixture').get()).data().estado,'suspendida');
+ assert.equal((await db.collection('auditoria').where('empresaId','==','reset-fixture').get()).size,1);
+ await db.doc('empresas/reset-fixture').update({estado:'activa'});
+ await expectReset('request',resetOwner,409,requestReset);
+ console.log('PASS security reset requires owner consent, protects dependencies and tenants, and commits only once');
  console.log('Completed '+count+' client deletion checks.');
 }catch(e){console.error(e);console.error(logs);process.exitCode=1;}finally{child.kill();await db.terminate();}

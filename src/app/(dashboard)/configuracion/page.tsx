@@ -1,5 +1,6 @@
 "use client";
 
+import { SecurityReset } from '@/components/admin/SecurityReset';
 import { ProfileForm } from '@/components/configuracion/ProfileForm';
 import Link from 'next/link';
 import { UserAccessDialog } from "@/components/configuracion/UserAccessDialog";
@@ -227,8 +228,13 @@ export default function ConfiguracionPage() {
     }
   };
 
-  if (empresaError) return <LoadError message={empresaError} />;
-  if (loadedEmpresaId !== userData?.empresaId || !capitalReady) return <p role="status">Consultando configuración de la financiera…</p>;
+  const securityReset = userData?.rol === 'dueño' && userData.empresaId && <section className="space-y-2 rounded-xl border bg-card p-4">
+            <h2 className="font-semibold">Borrado de seguridad</h2>
+            <p className="text-sm text-muted-foreground">Puedes autorizar un borrado único por categorías. Solo el superadmin puede ejecutarlo.</p>
+            <SecurityReset empresaId={userData.empresaId} nombre={empresaData.nombre || 'Tu financiera'} owner />
+          </section>;
+  if (empresaError) return <div className="space-y-4"><LoadError message={empresaError} />{securityReset}</div>;
+  if (loadedEmpresaId !== userData?.empresaId || !capitalReady) return <div className="space-y-4"><p role="status">Consultando configuración de la financiera…</p>{securityReset}</div>;
 
   return (
     <div className="space-y-6">
@@ -641,6 +647,8 @@ export default function ConfiguracionPage() {
         </TabsContent>
 
         <TabsContent value="sistema" className="space-y-4 pt-4">
+          {securityReset}
+
           <Card className="max-w-2xl">
             <CardHeader>
               <CardTitle>Preferencias Visuales</CardTitle>
