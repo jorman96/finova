@@ -75,13 +75,20 @@ export function EliminarPrestamoDialog({ prestamo, onDeleted, triggerButton }: E
         }
       }
     }}>
-      <DialogTrigger render={triggerButton ?? <Button variant="destructive" size="sm" className="gap-1.5" />}>
-        {!triggerButton && (
-          <>
-            <Trash2 className="h-4 w-4" />
-            Eliminar Crédito
-          </>
-        )}
+      <DialogTrigger
+        render={
+          triggerButton ?? (
+            <Button
+              variant="destructive"
+              size="icon"
+              className="h-8 w-8"
+              title="Eliminar Crédito"
+              aria-label="Eliminar Crédito"
+            />
+          )
+        }
+      >
+        {!triggerButton && <Trash2 className="h-4 w-4" />}
       </DialogTrigger>
 
       <DialogContent className="max-w-md">
