@@ -270,7 +270,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
                           </div>
                           <div className="text-right">
                             <p className="text-muted-foreground">Frecuencia</p>
-                            <p className="font-medium capitalize">{p.frecuenciaPago}</p>
+                            <p className="font-medium capitalize">{p.calendarioPersonalizado ? 'Personalizado' : p.frecuenciaPago}</p>
                           </div>
                         </div>
                         <div className="mt-4 text-right">

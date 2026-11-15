@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CreditCard, CheckCircle, AlertCircle, Clock, FileText, Trash2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { EliminarPrestamoDialog } from "@/components/prestamos/EliminarPrestamoDialog";
 import { RegistrarPagoDialog } from "@/components/pagos/RegistrarPagoDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -94,7 +95,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
               <Badge variant={prestamo.estado === 'moroso' ? 'destructive' : prestamo.estado === 'completado' ? 'secondary' : 'default'}>
                 {prestamo.estado.toUpperCase()}
               </Badge>
-              <span className="text-sm text-muted-foreground">{prestamo.frecuenciaPago}</span>
+              <span className="text-sm text-muted-foreground">{prestamo.calendarioPersonalizado ? 'Personalizado' : prestamo.frecuenciaPago}</span>
             </div>
           </div>
         </div>
@@ -136,6 +137,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           {prestamo.estado !== 'completado' && userData && collectors.includes(userData.rol) && (
             <RegistrarPagoDialog prestamo={prestamo} cuotas={cuotas} onPagoRegistrado={fetchData} onReceiptStatus={receiptStatus} />
           )}
+          <EliminarPrestamoDialog prestamo={prestamo} onDeleted={() => router.push("/prestamos")} />
 
         </div>
       </div>
@@ -278,7 +280,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
         </Card>
       </div>
 
-      <details className="rounded-lg border bg-card p-4 text-sm"><summary className="cursor-pointer font-medium">Correcciones del historial financiero</summary><p className="mt-3 text-muted-foreground">Los créditos y cobros se conservan. Para corregir un registro, crea una gestión administrativa y adjunta la referencia; los reversos requieren revisión y conciliación.</p><Link className="mt-3 inline-block underline" href={'/gestion?cliente=' + prestamo.clienteId}>Crear gestión de revisión</Link></details>
+      <details className="rounded-lg border bg-card p-4 text-sm"><summary className="cursor-pointer font-medium">Correcciones del historial financiero</summary><p className="mt-3 text-muted-foreground">Los créditos con historial de cobros se conservan. Para corregir un registro, crea una gestión administrativa y adjunta la referencia; los reversos requieren revisión y conciliación.</p><Link className="mt-3 inline-block underline" href={'/gestion?cliente=' + prestamo.clienteId}>Crear gestión de revisión</Link></details>
     </div>
   );
 }

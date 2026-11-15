@@ -93,7 +93,7 @@ export default function ReportesPage() {
           "Tasa (%)": p.tasaInteres,
           "Total a Pagar": p.totalPagar,
           "Saldo Restante": p.saldoRestante,
-          "Frecuencia": p.frecuenciaPago
+          "Frecuencia": p.calendarioPersonalizado ? 'Personalizado' : p.frecuenciaPago
         }));
         appendRows(wb, "Préstamos", prestamosData);
       }

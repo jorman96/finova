@@ -102,6 +102,7 @@ export interface Prestamo {
   tasaInteres: number;
   tipoInteres: 'fijo' | 'saldo_deudor';
   frecuenciaPago: 'diario' | 'semanal' | 'quincenal' | 'mensual';
+  calendarioPersonalizado?: boolean;
   numeroCuotas: number;
   fechaDesembolso: string;
   fechaPrimerPago: string;

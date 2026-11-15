@@ -161,7 +161,7 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
                       </div>
                       <div className="flex flex-col">
                         <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3"/> Frecuencia</span>
-                        <span className="text-sm font-semibold capitalize">{p.frecuenciaPago || 'Mensual'}</span>
+                        <span className="text-sm font-semibold capitalize">{p.calendarioPersonalizado ? 'Personalizado' : p.frecuenciaPago || 'Mensual'}</span>
                       </div>
                       <div className="flex flex-col">
                         <span className="text-xs text-muted-foreground flex items-center gap-1"><Target className="h-3 w-3"/> Plazo</span>

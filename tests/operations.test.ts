@@ -31,3 +31,16 @@ test('simulator rejects fractional installment counts and invalid dates', () => 
   const input = { monto: 100, numeroCuotas: 3, tasaInteres: 0, tipoInteres: 'fijo' as const, frecuenciaPago: 'mensual' as const, fechaPrimerPago: '2026-10-24' };
   for (const change of [{ numeroCuotas: 3.5 }, { numeroCuotas: 201 }, { monto: -10 }, { tasaInteres: -2 }, { fechaPrimerPago: '2026-02-30' }]) assert.throws(() => generateAmortizationTable({ ...input, ...change }));
 });
+
+test('custom dates allow two payments in the disbursement month without changing interest or principal', () => {
+  const input = { monto: 50, numeroCuotas: 2, tasaInteres: 5, tipoInteres: 'fijo' as const, frecuenciaPago: 'mensual' as const, fechaPrimerPago: '2026-11-19', fechaDesembolso: '2026-11-15' };
+  const dates = ['2026-11-19', '2026-11-29'];
+  const regular = generateAmortizationTable(input);
+  const custom = generateAmortizationTable({ ...input, fechasPersonalizadas: dates });
+  assert.deepEqual(custom, regular.map((row, index) => ({ ...row, fechaVencimiento: dates[index] })));
+  assert.equal(custom.reduce((total, row) => total + row.capital, 0), 50);
+  for (const invalid of [['2026-11-19'], ['2026-11-19', '2026-11-19'], ['2026-11-19', '2026-11-18'], ['2026-11-19', '2026-11-31']]) {
+    assert.throws(() => generateAmortizationTable({ ...input, fechasPersonalizadas: invalid }));
+  }
+  assert.throws(() => generateAmortizationTable({ ...input, fechaDesembolso: '2026-11-20', fechasPersonalizadas: dates }));
+});

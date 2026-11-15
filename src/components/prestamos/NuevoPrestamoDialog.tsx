@@ -38,6 +38,13 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
   const [fechaDesembolso, setFechaDesembolso] = useState(businessDate());
   const [fechaPrimerPago, setFechaPrimerPago] = useState("");
 
+  const [personalizado, setPersonalizado] = useState(false);
+  const [fechas, setFechas] = useState<string[]>([]);
+  const count = Number(numeroCuotas);
+  const fechasCuotas = personalizado && Number.isInteger(count) && count >= 1 && count <= 200
+    ? Array.from({ length: count }, (_, index) => fechas[index] || '')
+    : [];
+
   const [simulacion, setSimulacion] = useState<CuotaProyectada[]>([]);
   const [reviewed, setReviewed] = useState(false);
   const [reviewStage, setReviewStage] = useState(false);
@@ -57,6 +64,7 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
       setFrecuenciaPago("mensual");
       setNumeroCuotas("");
       setFechaPrimerPago("");
+      setPersonalizado(false); setFechas([]);
       setSimulacion([]);
       setReviewed(false); setReviewStage(false); setFechaDesembolso(businessDate());
     }
@@ -66,12 +74,13 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
   useEffect(() => {
     setSimulacion([]);
     setReviewed(false);
-  }, [monto, tasaInteres, periodoTasa, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago, fechaDesembolso]);
+  }, [monto, tasaInteres, periodoTasa, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago, fechaDesembolso, personalizado, fechas]);
 
   const changeOpen = useUnsavedDialog(open, setOpen, !!(monto || tasaInteres || numeroCuotas || fechaPrimerPago), loading);
 
   const handleSimular = () => {
-    if (!monto || !tasaInteres || !numeroCuotas || !fechaPrimerPago) {
+    const primeraFecha = personalizado ? fechasCuotas[0] : fechaPrimerPago;
+    if (!monto || !tasaInteres || !numeroCuotas || !primeraFecha || !fechaDesembolso) {
       toast.error("Llena todos los campos financieros para simular.");
       return;
     }
@@ -83,11 +92,12 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
       tipoInteres,
       frecuenciaPago,
       numeroCuotas: Number(numeroCuotas),
-      fechaPrimerPago
+      fechaPrimerPago: primeraFecha,
+      fechaDesembolso,
+      ...(personalizado ? { fechasPersonalizadas: fechasCuotas } : {}),
     };
 
     try {
-      if (fechaPrimerPago < fechaDesembolso) throw new Error('El primer pago no puede ser anterior al desembolso.');
       const resultado = generateAmortizationTable(input);
       setSimulacion(resultado);
       setReviewStage(true);
@@ -128,7 +138,8 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
         frecuenciaPago,
         numeroCuotas: Number(numeroCuotas),
         fechaDesembolso,
-        fechaPrimerPago,
+        fechaPrimerPago: simulacion[0].fechaVencimiento,
+        ...(personalizado ? { calendarioPersonalizado: true } : {}),
         totalInteres,
         totalPagar,
         saldoRestante: totalPagar,
@@ -233,9 +244,9 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Frecuencia de Pago</Label>
+              <Label>{personalizado ? 'Base del cálculo de intereses' : 'Frecuencia de pago'}</Label>
               <Select value={frecuenciaPago} onValueChange={(val: any) => val && setFrecuenciaPago(val)}>
-                <SelectTrigger aria-label="Frecuencia de Pago"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={personalizado ? "Base del cálculo de intereses" : "Frecuencia de pago"}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="diario">Diario</SelectItem>
                   <SelectItem value="semanal">Semanal</SelectItem>
@@ -248,13 +259,29 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
               <Label htmlFor={`${fieldId}-1`}> Número de Cuotas</Label>
               <Input id={`${fieldId}-1`} type="number" min="1" max="200" step="1" value={numeroCuotas} onChange={e => setNumeroCuotas(e.target.value)} required />
             </div>
-            <div className="space-y-2">
+            {!personalizado && <div className="space-y-2">
               <Label htmlFor={`${fieldId}-2`}> Fecha de Primer Pago</Label>
               <Input id={`${fieldId}-2`} type="date" value={fechaPrimerPago} onChange={e => setFechaPrimerPago(e.target.value)} required />
-            </div>
+            </div>}
           </div>
 
           <label className="block space-y-2 text-sm">Fecha de desembolso<Input type="date" required value={fechaDesembolso} onChange={e => setFechaDesembolso(e.target.value)} /></label>
+          <label className="flex items-center gap-3 text-sm">
+            <input type="checkbox" className="size-4 shrink-0" checked={personalizado} onChange={e => setPersonalizado(e.target.checked)} />
+            Elegir una fecha para cada cuota
+          </label>
+          {personalizado && <fieldset className="space-y-3 rounded-lg border p-3">
+            <legend className="px-1 text-sm font-semibold">Fechas acordadas</legend>
+            <p className="text-sm text-muted-foreground">Puedes poner varias cuotas en el mismo mes. Las fechas deben ir en orden y ser distintas. Cambiar las fechas no prorratea los intereses por días: la base seleccionada mantiene el cálculo por cuota. Revisa el total antes de registrar.</p>
+            {!fechasCuotas.length && <p className="text-sm">Indica cuántas cuotas tendrá el crédito (1 a 200).</p>}
+            <div className="grid gap-3 sm:grid-cols-2">{fechasCuotas.map((date, index) => <div key={index} className="min-w-0 space-y-1">
+              <Label htmlFor={`${fieldId}-due-${index}`}>Vencimiento de la cuota {index + 1}</Label>
+              <Input id={`${fieldId}-due-${index}`} type="date" min={fechaDesembolso} required value={date} onChange={e => {
+                const value = e.target.value;
+                setFechas(old => Array.from({ length: Math.max(old.length, index + 1) }, (_, i) => i === index ? value : old[i] || ''));
+              }} />
+            </div>)}</div>
+          </fieldset>}
           <div className="flex justify-end pt-2">
             <Button type="button" disabled={clientsLoading || !!clientError} variant="secondary" onClick={handleSimular}>
               Simular Cuotas
@@ -263,7 +290,7 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
 
           </div>
           {reviewStage && <Button type="button" variant="outline" onClick={() => { setReviewStage(false); setReviewed(false); }}>Editar condiciones</Button>}
-          {reviewStage && simulacion.length > 0 && <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2"><h3 className="font-semibold">Resumen para revisión</h3><p>Cliente: {clientes.find(c => c.id === clienteId)?.nombres} {clientes.find(c => c.id === clienteId)?.apellidos}</p><p>Monto entregado: ${Number(monto).toFixed(2)} · Tasa: {tasaInteres}% {periodoTasa} · {numeroCuotas} cuotas · Frecuencia: {frecuenciaPago}</p><p>Intereses: ${simulacion.reduce((v, c) => v + c.interes, 0).toFixed(2)} · Total por devolver: ${simulacion.reduce((v, c) => v + c.totalCuota, 0).toFixed(2)}</p><p>Primera cuota: ${simulacion[0].totalCuota.toFixed(2)} · Primer vencimiento: {simulacion[0].fechaVencimiento}</p><p className="text-xs text-muted-foreground">El cronograma distribuye los centavos para devolver exactamente el capital. Revisa las condiciones y el calendario con el cliente.</p></div>}
+          {reviewStage && simulacion.length > 0 && <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2"><h3 className="font-semibold">Resumen para revisión</h3><p>Cliente: {clientes.find(c => c.id === clienteId)?.nombres} {clientes.find(c => c.id === clienteId)?.apellidos}</p><p>Monto entregado: ${Number(monto).toFixed(2)} · Tasa: {tasaInteres}% {periodoTasa} · {numeroCuotas} cuotas · Calendario: {personalizado ? 'Personalizado' : frecuenciaPago}</p><p>Intereses: ${simulacion.reduce((v, c) => v + c.interes, 0).toFixed(2)} · Total por devolver: ${simulacion.reduce((v, c) => v + c.totalCuota, 0).toFixed(2)}</p><p>Primera cuota: ${simulacion[0].totalCuota.toFixed(2)} · Primer vencimiento: {simulacion[0].fechaVencimiento}</p><p className="text-xs text-muted-foreground">El cronograma distribuye los centavos para devolver exactamente el capital. Revisa las condiciones y el calendario con el cliente.</p></div>}
           {reviewStage && simulacion.length > 0 && (
             <div className="mt-4 border rounded-md max-h-48 overflow-auto bg-muted/20">
               <table className="w-full text-sm text-left">

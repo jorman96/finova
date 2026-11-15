@@ -8,6 +8,8 @@ export interface AmortizationInput {
   frecuenciaPago: 'diario' | 'semanal' | 'quincenal' | 'mensual';
   numeroCuotas: number;
   fechaPrimerPago: string;
+  fechasPersonalizadas?: readonly string[];
+  fechaDesembolso?: string;
 }
 
 export interface CuotaProyectada {
@@ -46,6 +48,14 @@ export function generateAmortizationTable(input: AmortizationInput): CuotaProyec
   const { monto, tasaInteres, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago, periodoTasa = 'mensual' } = input;
   if (!Number.isFinite(monto) || monto <= 0 || !Number.isSafeInteger(Math.round(monto * 100)) || Math.abs(monto * 100 - Math.round(monto * 100)) > 0.00001 || !Number.isFinite(tasaInteres) || tasaInteres < 0 || !Number.isInteger(numeroCuotas) || numeroCuotas < 1 || numeroCuotas > 200 || Math.round(monto * 100) < numeroCuotas || !/^\d{4}-\d{2}-\d{2}$/.test(fechaPrimerPago) || isNaN(parseISO(fechaPrimerPago).getTime())) throw new Error('Revisa monto, tasa, fecha y número de cuotas (1 a 200). El monto debe tener hasta dos decimales y cubrir al menos un centavo de capital por cuota.');
 
+  const { fechasPersonalizadas, fechaDesembolso } = input;
+  const valid = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(parseISO(value).getTime());
+  if (fechaDesembolso !== undefined && (!valid(fechaDesembolso) || fechaPrimerPago < fechaDesembolso)) throw new Error('El primer pago no puede ser anterior al desembolso.');
+  if (fechasPersonalizadas && (
+    !fechaDesembolso || fechasPersonalizadas.length !== numeroCuotas || fechasPersonalizadas[0] !== fechaPrimerPago ||
+    fechasPersonalizadas.some((date, index) => !valid(date) || date < fechaDesembolso || (index > 0 && date <= fechasPersonalizadas[index - 1]))
+  )) throw new Error('Indica una fecha válida por cuota, en orden y sin repetir, desde el desembolso en adelante.');
+
   const cuotas: CuotaProyectada[] = [];
   let fechaActual = parseISO(fechaPrimerPago);
 
@@ -66,7 +76,7 @@ export function generateAmortizationTable(input: AmortizationInput): CuotaProyec
       remainingCents -= capitalCents;
       cuotas.push({
         numeroCuota: i,
-        fechaVencimiento: format(fechaActual, "yyyy-MM-dd"),
+        fechaVencimiento: fechasPersonalizadas?.[i - 1] ?? format(fechaActual, "yyyy-MM-dd"),
         capital: capitalCents / 100,
         interes: interestCents / 100,
         totalCuota: (capitalCents + interestCents) / 100,
@@ -88,7 +98,7 @@ export function generateAmortizationTable(input: AmortizationInput): CuotaProyec
 
       cuotas.push({
         numeroCuota: i,
-        fechaVencimiento: format(fechaActual, "yyyy-MM-dd"),
+        fechaVencimiento: fechasPersonalizadas?.[i - 1] ?? format(fechaActual, "yyyy-MM-dd"),
         capital: capitalCents / 100,
         interes: interestCents / 100,
         totalCuota: (capitalCents + interestCents) / 100,

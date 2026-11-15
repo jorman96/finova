@@ -135,5 +135,20 @@ try{
  await db.doc('empresas/reset-fixture').update({estado:'activa'});
  await expectReset('request',resetOwner,409,requestReset);
  console.log('PASS security reset requires owner consent, protects dependencies and tenants, and commits only once');
+ await db.doc('empresas/loan-cleanup').set({estado:'activa'});
+ const loanOwner=await user('loanCleanupOwner','dueño','loan-cleanup',true);
+ await db.doc('clientes/loan-cleanup-client').set({empresaId:'loan-cleanup',estado:'activo'});
+ await db.doc('prestamos/loan-cleanup-credit').set({empresaId:'loan-cleanup',estado:'activo',clienteId:'loan-cleanup-client',monto:50,totalPagar:50,saldoRestante:50});
+ await db.doc('cuotas/loan-cleanup-due').set({empresaId:'loan-cleanup',prestamoId:'loan-cleanup-credit',clienteId:'loan-cleanup-client',montoPagado:0,estado:'pendiente'});
+ const removeLoan=(token)=>api('/api/prestamos/eliminar',{prestamoId:'loan-cleanup-credit',motivo:'Crédito ficticio incorrecto',confirmado:true},token);
+ assert.equal((await removeLoan(other)).status,403);count++;
+ await db.doc('pagos/loan-cleanup-ref').set({empresaId:'loan-cleanup',prestamoId:'loan-cleanup-credit'});
+ assert.equal((await removeLoan(loanOwner)).status,409);count++;
+ await db.doc('pagos/loan-cleanup-ref').delete();
+ const removedLoan=await removeLoan(loanOwner);assert.equal(removedLoan.status,200,await removedLoan.clone().text());count++;
+ assert.equal((await db.doc('prestamos/loan-cleanup-credit').get()).exists,false);
+ assert.equal((await db.doc('cuotas/loan-cleanup-due').get()).exists,false);
+ assert.equal((await db.doc('clientes/loan-cleanup-client').get()).data().estado,'nuevo');
+ console.log('PASS credit deletion keeps loans with payments and removes only a clean same-tenant loan');
  console.log('Completed '+count+' client deletion checks.');
 }catch(e){console.error(e);console.error(logs);process.exitCode=1;}finally{child.kill();await db.terminate();}
