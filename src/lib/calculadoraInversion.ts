@@ -1,5 +1,7 @@
-import { addMonths, parseISO, format } from "date-fns";
-import { ModalidadPagoInversionista } from "@/types";
+import { addMonths,parseISO } from "date-fns";
+import { ModalidadPagoInversionista } from "../types";
+import { installmentDate } from "./amortization";
+import { cents } from "./money";
 
 export interface CalculoInversionInput {
   montoTotal: number;
@@ -29,6 +31,8 @@ export interface ResumenInversionProyectada {
 export function generarCronogramaInversion(input: CalculoInversionInput): ResumenInversionProyectada {
   const { montoTotal, tieneInteres, tasaInteresMensual, modalidadPago, plazoMeses, fechaPrimerPago } = input;
 
+  if (!Number.isInteger(plazoMeses) || plazoMeses < 1 || plazoMeses > 120 || cents(montoTotal) < plazoMeses || !Number.isFinite(tasaInteresMensual) || tasaInteresMensual < 0 || tasaInteresMensual > 100) throw new Error("Condiciones de inversión inválidas");
+  installmentDate(fechaPrimerPago, "mensual", 0);
   const cuotas: CuotaInversionProyectada[] = [];
   const tasaDecimal = tieneInteres ? Math.max(0, tasaInteresMensual) / 100 : 0;
   let fechaActual = parseISO(fechaPrimerPago);
@@ -47,7 +51,7 @@ export function generarCronogramaInversion(input: CalculoInversionInput): Resume
 
       cuotas.push({
         numeroCuota: i,
-        fechaVencimiento: format(fechaActual, 'yyyy-MM-dd'),
+        fechaVencimiento: installmentDate(fechaPrimerPago, "mensual", i - 1),
         capital: capitalCuota,
         interes: interesCuota,
         totalCuota,
@@ -58,7 +62,7 @@ export function generarCronogramaInversion(input: CalculoInversionInput): Resume
     }
   } else if (modalidadPago === 'cuota_amortizada_mensual') {
     // Capital repartido uniformemente + interés acordado sobre el capital
-    const capitalPorMes = Number((montoTotal / plazoMeses).toFixed(2));
+    const capitalPorMes = Math.floor(cents(montoTotal) / plazoMeses) / 100;
     const interesPorMes = Number((montoTotal * tasaDecimal).toFixed(2));
     let capitalAcumulado = 0;
 
@@ -72,7 +76,7 @@ export function generarCronogramaInversion(input: CalculoInversionInput): Resume
 
       cuotas.push({
         numeroCuota: i,
-        fechaVencimiento: format(fechaActual, 'yyyy-MM-dd'),
+        fechaVencimiento: installmentDate(fechaPrimerPago, "mensual", i - 1),
         capital: capitalCuota,
         interes: interesCuota,
         totalCuota,
@@ -83,7 +87,7 @@ export function generarCronogramaInversion(input: CalculoInversionInput): Resume
     }
   } else {
     // 'devolucion_capital_en_cuotas' (Sin interés, división de capital pura)
-    const capitalPorMes = Number((montoTotal / plazoMeses).toFixed(2));
+    const capitalPorMes = Math.floor(cents(montoTotal) / plazoMeses) / 100;
     let capitalAcumulado = 0;
 
     for (let i = 1; i <= plazoMeses; i++) {
@@ -96,7 +100,7 @@ export function generarCronogramaInversion(input: CalculoInversionInput): Resume
 
       cuotas.push({
         numeroCuota: i,
-        fechaVencimiento: format(fechaActual, 'yyyy-MM-dd'),
+        fechaVencimiento: installmentDate(fechaPrimerPago, "mensual", i - 1),
         capital: capitalCuota,
         interes: interesCuota,
         totalCuota,

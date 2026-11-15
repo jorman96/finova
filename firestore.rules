@@ -1,44 +1,49 @@
 rules_version = '2';
 service cloud.firestore {
- match /databases/{database}/documents {
-  function signedIn() { return request.auth != null; }
-  function profile() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
-  function enabled() { return signedIn() && profile().get('activo', true) == true; }
-  function root() { return enabled() && profile().rol == 'superadmin'; }
-  function tenant(id) { return enabled() && profile().empresaId == id && get(/databases/$(database)/documents/empresas/$(id)).data.estado == 'activa'; }
-  function manager() { return enabled() && profile().rol in ['superadmin','dueño','admin']; }
-  function sameTenant() { return request.resource.data.empresaId == resource.data.empresaId; }
-  function legacyCollections(id) { return !exists(/databases/$(database)/documents/capital_settings/$(id)) || get(/databases/$(database)/documents/capital_settings/$(id)).data.get('enabled', false) != true; }
-  function preserveFunding(id) { return legacyCollections(id) || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['capitalInicial','inyeccionesCapital','cuentasBancarias','moneda']); }
-  match /capital_settings/{id} { allow read, write: if false; }
-  match /capital_control/{path=**} { allow read, write: if false; }
-  match /usuarios/{id} {
-   allow get: if signedIn() && request.auth.uid == id || root() || (manager() && tenant(resource.data.empresaId));
-   allow list: if root() || (manager() && tenant(resource.data.empresaId));
-   allow update: if root() || (enabled() && request.auth.uid == id && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre','telefono','documento']));
-   allow create, delete: if false;
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function profile() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function enabled() { return signedIn() && profile().activo == true; }
+    function superadmin() { return enabled() && profile().rol == 'superadmin'; }
+    function tenant(id) {
+      return enabled() && profile().empresaId == id &&
+        (superadmin() || get(/databases/$(database)/documents/empresas/$(id)).data.estado == 'activa');
+    }
+    function manager(id) { return tenant(id) && profile().rol in ['superadmin', 'dueño', 'admin']; }
+    function sameTenant() { return request.resource.data.empresaId == resource.data.empresaId; }
+    match /usuarios/{uid} {
+      allow read: if enabled() && (request.auth.uid == uid || superadmin() || manager(resource.data.empresaId));
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow update: if enabled() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre','telefono','documento']);
+      allow create, delete: if false;
+    }
+    match /empresas/{id} {
+      allow read: if superadmin() || tenant(id);
+      allow create: if superadmin();
+      allow update: if superadmin() || (manager(id) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre','razonSocial','identificacionFiscal','direccion','telefono','email','pais','moneda','logoUrl','cuentasBancarias','zonaHoraria','tasaMoraDefecto']));
+      allow delete: if false;
+    }
+    match /clientes/{id} {
+      allow read: if superadmin() || tenant(resource.data.empresaId);
+      allow create: if tenant(request.resource.data.empresaId) && profile().rol in ['superadmin','dueño','admin','cajero'] && request.resource.data.score == 50;
+      allow update: if tenant(resource.data.empresaId) && sameTenant() && profile().rol in ['superadmin','dueño','admin','cajero'] && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['score','empresaId']);
+      allow delete: if false;
+    }
+    match /inversionistas/{id} {
+      allow read: if superadmin() || manager(resource.data.empresaId);
+      allow create: if manager(request.resource.data.empresaId) && request.resource.data.totalInvertido == 0 && request.resource.data.totalPagado == 0 && request.resource.data.saldoPendiente == 0;
+      allow update: if manager(resource.data.empresaId) && sameTenant() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['totalInvertido','totalPagado','saldoPendiente']);
+      allow delete: if false;
+    }
+    match /{collection}/{id} {
+      allow read: if collection in ['prestamos','cuotas','pagos'] && (superadmin() || tenant(resource.data.empresaId));
+      allow read: if collection in ['inversion_contratos','cuotas_inversionistas','pagos_inversionistas','movimientos_caja','auditoria'] && (superadmin() || manager(resource.data.empresaId));
+      allow write: if false;
+    }
+    match /settings/{id} {
+      allow read: if superadmin() || tenant(resource.data.empresaId);
+      allow create: if manager(request.resource.data.empresaId);
+      allow update: if manager(resource.data.empresaId) && sameTenant();
+    }
   }
-  match /empresas/{id} {
-   allow read: if root() || tenant(id);
-   allow create: if root();
-   allow update: if preserveFunding(id) && (root() || (tenant(id) && manager()));
-   allow delete: if false;
-  }
-  match /clientes/{id} {
-   allow read: if root() || tenant(resource.data.empresaId);
-   allow create: if tenant(request.resource.data.empresaId) && profile().rol in ['superadmin','dueño','admin','cajero'];
-   allow update: if sameTenant() && tenant(resource.data.empresaId) && profile().rol in ['superadmin','dueño','admin','cajero'];
-   allow delete: if false;
-  }
-  match /{name}/{id} {
-   allow read: if name in ['prestamos','cuotas','pagos'] && (root() || tenant(resource.data.empresaId));
-   allow read: if name in ['inversionistas','inversion_contratos','cuotas_inversionistas','pagos_inversionistas','settings','movimientos_caja','auditoria'] && (root() || (manager() && tenant(resource.data.empresaId)));
-   allow create: if name in ['prestamos','cuotas','inversionistas','inversion_contratos','cuotas_inversionistas','pagos_inversionistas','settings'] && tenant(request.resource.data.empresaId) && manager();
-   allow update: if name in ['prestamos','cuotas','inversionistas','inversion_contratos','cuotas_inversionistas','settings'] && (!(name in ['prestamos','cuotas']) || legacyCollections(resource.data.empresaId)) && sameTenant() && tenant(resource.data.empresaId) && manager();
-   allow create: if name == 'pagos' && legacyCollections(request.resource.data.empresaId) && tenant(request.resource.data.empresaId) && profile().rol in ['superadmin','dueño','admin','cajero','cobrador'];
-   allow update: if name == 'cuotas' && legacyCollections(resource.data.empresaId) && sameTenant() && tenant(resource.data.empresaId) && profile().rol in ['cajero','cobrador'];
-   allow update: if name == 'prestamos' && legacyCollections(resource.data.empresaId) && sameTenant() && tenant(resource.data.empresaId) && profile().rol in ['cajero','cobrador'] && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['saldoRestante','estado']);
-   allow delete: if false;
-  }
- }
 }

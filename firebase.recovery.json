@@ -1,1 +1,0 @@
-{"emulators": {"firestore": {"port": 8088}, "ui": {"enabled": false}, "singleProjectMode": true, "storage": {"port": 9198}}}

@@ -1,20 +1,21 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
 
-import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UserPlus, Loader2, Landmark } from "lucide-react";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
+import { db } from "@/lib/firebase";
+import { addDoc,collection,serverTimestamp } from "firebase/firestore";
+import { Landmark,Loader2,UserPlus } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface NuevoInversionistaDialogProps {
   onInversionistaCreado?: (id: string, nombre: string) => void;
-  triggerButton?: React.ReactNode;
+  triggerButton?: React.ReactElement;
 }
 
 export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton }: NuevoInversionistaDialogProps) {
@@ -91,9 +92,9 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
       if (onInversionistaCreado) {
         onInversionistaCreado(docRef.id, nombreCompleto);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error al registrar inversionista:", error);
-      toast.error("Error al registrar: " + error.message);
+      toast.error("Error al registrar: " + errorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -101,7 +102,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={triggerButton ? (triggerButton as any) : <Button className="gap-2" />}>
+      <DialogTrigger render={triggerButton ? triggerButton : <Button className="gap-2" />}>
         {!triggerButton && (
           <>
             <UserPlus className="h-4 w-4" />
@@ -121,7 +122,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="nombres">Nombres / Razón Social *</Label>
               <Input
@@ -143,7 +144,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="identificacion">Cédula / RUC / Pasaporte *</Label>
               <Input
@@ -166,7 +167,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="correo">Correo Electrónico</Label>
               <Input
@@ -192,7 +193,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Datos Bancarios para Liquidación de Rendimientos
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="banco">Banco de Destino</Label>
                 <Input
@@ -216,7 +217,7 @@ export function NuevoInversionistaDialog({ onInversionistaCreado, triggerButton 
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-2 gap-3 mt-3">
               <div className="space-y-1.5">
                 <Label htmlFor="numeroCuenta">Número de Cuenta</Label>
                 <Input

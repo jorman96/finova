@@ -1,62 +1,69 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
-import { doc, getDoc, collection, query, where, getDocs, orderBy, writeBatch, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { Prestamo, Cuota } from "@/types";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { RegistrarPagoDialog } from "@/components/pagos/RegistrarPagoDialog";
+import { EliminarPrestamoDialog } from "@/components/prestamos/EliminarPrestamoDialog";
+import { ReestructurarPrestamoDialog } from "@/components/prestamos/ReestructurarPrestamoDialog";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CreditCard, CheckCircle, AlertCircle, Clock, FileText, Trash2, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/AuthContext";
+import { apiPost } from "@/lib/api-client";
+import { db } from "@/lib/firebase";
+import { collectors } from "@/lib/permissions";
+import { useFinanceRequest } from "@/lib/use-finance-request";
+import { Cuota, Prestamo } from "@/types";
+import type { DocumentData } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { AlertCircle, ArrowLeft, CheckCircle, Clock, FileText, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { RegistrarPagoDialog } from "@/components/pagos/RegistrarPagoDialog";
-import { useAuth } from "@/contexts/AuthContext";
+import { use, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { LoadError } from "@/components/ListPagination";
-import { collectors } from "@/lib/permissions";
 
 export default function PrestamoDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const { id } = resolvedParams;
   const { userData } = useAuth();
+  const finance = useFinanceRequest();
+  const [motivoAnulacion, setMotivoAnulacion] = useState("");
   const [prestamo, setPrestamo] = useState<Prestamo | null>(null);
   const [cuotas, setCuotas] = useState<Cuota[]>([]);
-  const [pagos, setPagos] = useState<any[]>([]);
+  const [pagos, setPagos] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [lastReceipt, setLastReceipt] = useState<{ id: string; mail: 'pending' | 'accepted' } | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     if (!id || !userData?.empresaId) return;
 
-    const ready = new Set<string>();
-    const mark = (name: string) => { ready.add(name); if (ready.size === 3) setLoading(false); };
-    const failed = () => { setLoadError('No se pudo cargar el detalle completo del crédito.'); setLoading(false); };
     const unsubPrestamo = onSnapshot(doc(db, "prestamos", id), (docSnap) => {
       if (docSnap.exists()) {
-        setPrestamo({ id: docSnap.id, ...docSnap.data() } as Prestamo); mark("credito");
+        setPrestamo({ id: docSnap.id, ...docSnap.data() } as Prestamo);
       } else {
         router.push("/prestamos");
       }
-    }, failed);
+    });
 
-    const unsubCuotas = onSnapshot(query(collection(db, "cuotas"), where("empresaId", "==", userData.empresaId), where("prestamoId", "==", id)), (snap) => {
-      setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)).sort((a,b) => a.numeroCuota - b.numeroCuota)); mark("cuotas");
-    }, failed);
+    const unsubCuotas = onSnapshot(query(collection(db, "cuotas"), where("empresaId", "==", userData.empresaId), where("prestamoId", "==", id), orderBy("numeroCuota", "asc")), (snap) => {
+      setCuotas(snap.docs.map(d => ({ id: d.id, ...d.data() } as Cuota)));
+    });
 
-    const unsubPagos = onSnapshot(query(collection(db, "pagos"), where("empresaId", "==", userData!.empresaId), where("prestamoId", "==", id)), (snap) => {
+    const unsubPagos = onSnapshot(query(collection(db, "pagos"), where("empresaId", "==", userData.empresaId), where("prestamoId", "==", id)), (snap) => {
       const pagosData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      pagosData.sort((a: any, b: any) => {
+      pagosData.sort((a: DocumentData, b: DocumentData) => {
         const dateA = a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha || 0);
         const dateB = b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha || 0);
         return dateB.getTime() - dateA.getTime();
       });
-      setPagos(pagosData); mark("pagos");
+      setPagos(pagosData);
+      setLoading(false);
     }, (error) => {
       console.error("Error al obtener pagos:", error);
-      failed();
+      setLoading(false);
     });
 
     return () => {
@@ -66,21 +73,37 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
     };
   }, [id, router, userData?.empresaId]);
 
-  const fetchData = (receiptId: string) => setLastReceipt({ id: receiptId, mail: 'pending' });
-  const receiptStatus = (receiptId: string, mail: 'pending' | 'accepted') => setLastReceipt(previous => previous?.id === receiptId ? { id: receiptId, mail } : previous);
-  if (loadError) return <LoadError message={loadError} />;
+  const fetchData = () => {
+    // Mantenemos la función para refrescos
+  };
+
+  const handleDeletePrestamo = async () => {
+    if (!prestamo) return;
+    setIsDeleting(true);
+    try {
+      await finance.submit({ action: "cancel_loan", prestamoId: id, motivo: motivoAnulacion });
+      toast.success("Crédito anulado; historial conservado.");
+      setDeleteModalOpen(false);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "No se pudo anular"); }
+    finally { setIsDeleting(false); }
+  };
+
+  const handleDeletePago = async (pago: { id: string; anulado?: boolean }) => {
+    if (pago.anulado) return;
+    const motivo = window.prompt("Motivo de la anulación (mínimo 10 caracteres). Se conservará el pago original.");
+    if (!motivo) return;
+    try { await finance.submit({ action: "reverse_payment", pagoId: pago.id, motivo }); toast.success("Pago anulado con movimiento compensatorio."); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "No se pudo anular"); }
+  };
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando detalles del préstamo...</div>;
   if (!prestamo) return null;
 
   const cuotasPagadas = cuotas.filter(c => c.estado === 'pagada').length;
-  const totalCuotas = prestamo.numeroCuotas || cuotas.length;
-  const porcentajePagado = totalCuotas > 0 ? Math.min(100, (cuotasPagadas / totalCuotas) * 100) : 0;
+  const porcentajePagado = (cuotasPagadas / prestamo.numeroCuotas) * 100;
 
   return (
     <div className="space-y-6">
-      {lastReceipt && <div role="status" className="rounded-xl border bg-card p-4 text-sm space-y-2"><p className="font-semibold">Cobro guardado · Referencia {lastReceipt.id}</p><p>{lastReceipt.mail === 'accepted' ? 'La solicitud de correo fue aceptada. Su entrega depende del proveedor.' : 'El correo está pendiente o no pudo enviarse. El cobro ya está registrado; no lo registres nuevamente.'}</p><a className="underline" href={'#recibo-' + lastReceipt.id}>Consultar recibo en el historial</a></div>}
-
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/prestamos">
@@ -91,23 +114,23 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Préstamo - {prestamo.clienteNombre}</h2>
             <div className="flex items-center gap-2 mt-1">
-              <Badge variant={prestamo.estado === 'moroso' ? 'destructive' : prestamo.estado === 'completado' ? 'secondary' : 'default'}>
+              <Badge variant={prestamo.estado === 'moroso' ? 'destructive' : prestamo.estado === 'completado' ? 'secondary' : prestamo.estado === 'cancelado' ? 'outline' : 'default'}>
                 {prestamo.estado.toUpperCase()}
               </Badge>
               <span className="text-sm text-muted-foreground">{prestamo.frecuenciaPago}</span>
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 sm:justify-end">
-          <Button
-            variant="outline"
+        <div className="flex flex-wrap items-center gap-2">
+          <Button 
+            variant="outline" 
             onClick={async () => {
               try {
                 const { generarContratoPrestamo } = await import("@/lib/pdfGenerator");
                 const { getDoc, doc } = await import("firebase/firestore");
                 const empresaSnap = await getDoc(doc(db, "empresas", prestamo.empresaId));
                 const clienteSnap = await getDoc(doc(db, "clientes", prestamo.clienteId));
-
+                
                 const prestamoFormatted = {
                   ...prestamo,
                   id: prestamo.id,
@@ -133,10 +156,34 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
           >
             <FileText className="mr-2 h-4 w-4" /> Imprimir Contrato
           </Button>
-          {prestamo.estado !== 'completado' && userData && collectors.includes(userData.rol) && (
-            <RegistrarPagoDialog prestamo={prestamo} cuotas={cuotas} onPagoRegistrado={fetchData} onReceiptStatus={receiptStatus} />
+
+          {userData && collectors.includes(userData.rol) && !['completado', 'cancelado'].includes(prestamo.estado) && (
+            <RegistrarPagoDialog prestamo={prestamo} cuotas={cuotas} onPagoRegistrado={fetchData} />
           )}
 
+          {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
+            <>
+              {prestamo.estado !== 'cancelado' && prestamo.estado !== 'completado' && prestamo.estado !== 'reestructurado' && prestamo.saldoRestante > 0 && (
+                <ReestructurarPrestamoDialog
+                  prestamo={prestamo}
+                  onReestructurado={(newId) => router.push(`/prestamos/${newId}`)}
+                />
+              )}
+              {prestamo.estado !== 'cancelado' && prestamo.estado !== 'reestructurado' && (
+                <Button 
+                  variant="outline" 
+                  className="text-amber-600 border-amber-600/30 hover:bg-amber-500/10" 
+                  onClick={() => { finance.reset(); setMotivoAnulacion(""); setDeleteModalOpen(true); }}
+                >
+                  Anular Crédito
+                </Button>
+              )}
+              <EliminarPrestamoDialog 
+                prestamo={prestamo} 
+                onDeleted={() => router.push("/prestamos")} 
+              />
+            </>
+          )}
         </div>
       </div>
 
@@ -170,10 +217,26 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
               <span className="text-muted-foreground text-sm">Saldo Restante</span>
               <span className="font-bold text-primary">${prestamo.saldoRestante.toFixed(2)}</span>
             </div>
-
+            {prestamo.nuevoPrestamoId && (
+              <div className="flex justify-between border-b pb-2 text-sm bg-primary/5 p-2 rounded">
+                <span className="text-muted-foreground">Reestructurado En:</span>
+                <Link href={`/prestamos/${prestamo.nuevoPrestamoId}`} className="text-primary hover:underline font-semibold">
+                  Nuevo Crédito #{prestamo.nuevoPrestamoId.slice(-6)} →
+                </Link>
+              </div>
+            )}
+            {prestamo.prestamoOrigenId && (
+              <div className="flex justify-between border-b pb-2 text-sm bg-primary/5 p-2 rounded">
+                <span className="text-muted-foreground">Origen (Reestructuración):</span>
+                <Link href={`/prestamos/${prestamo.prestamoOrigenId}`} className="text-primary hover:underline font-semibold">
+                  Crédito Anterior #{prestamo.prestamoOrigenId.slice(-6)} →
+                </Link>
+              </div>
+            )}
+            
             <div className="pt-4">
               <div className="flex justify-between text-sm mb-2">
-                <span>Progreso ({cuotasPagadas}/{totalCuotas})</span>
+                <span>Progreso ({cuotasPagadas}/{prestamo.numeroCuotas})</span>
                 <span>{porcentajePagado.toFixed(0)}%</span>
               </div>
               <div className="w-full bg-secondary rounded-full h-2.5">
@@ -189,7 +252,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             <CardDescription>Detalle de cuotas y estado de pagos.</CardDescription>
           </CardHeader>
           <CardContent>
-             <div className="min-w-0 max-w-full border rounded-md overflow-auto max-h-[500px] bg-card/50">
+             <div className="border rounded-md overflow-y-auto max-h-[500px] bg-card/50">
                 <table className="w-full text-sm text-left relative">
                   <thead className="bg-muted sticky top-0 z-10 shadow-sm">
                     <tr>
@@ -234,7 +297,7 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
             <CardDescription>Registro de abonos y comprobantes.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="border rounded-md overflow-auto max-h-[400px] bg-card/50">
+            <div className="border rounded-md overflow-y-auto max-h-[400px] bg-card/50">
               <table className="w-full text-sm text-left relative">
                 <thead className="bg-muted sticky top-0 z-10 shadow-sm">
                   <tr>
@@ -249,10 +312,10 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
                   {pagos.length === 0 ? (
                     <tr><td colSpan={5} className="p-4 text-center text-muted-foreground">No hay pagos registrados.</td></tr>
                   ) : pagos.map(p => (
-                    <tr key={p.id} id={"recibo-" + p.id} className="border-t hover:bg-muted/50 target:bg-muted">
+                    <tr key={p.id} className="border-t hover:bg-muted/50">
                       <td className="p-3">{p.fecha?.toDate ? new Date(p.fecha.toDate()).toLocaleString() : 'N/A'}</td>
                       <td className="p-3 font-bold text-green-600">${p.monto.toFixed(2)}</td>
-                      <td className="p-3 capitalize">{p.metodo || p.metodoPago || 'Efectivo'}</td>
+                      <td className="p-3 capitalize">{p.anulado ? 'ANULADO · ' : ''}{p.metodo || p.metodoPago || 'Efectivo'}</td>
                       <td className="p-3 text-muted-foreground">{p.registradoPor || 'Sistema'}</td>
                       <td className="p-3 flex gap-2">
                         <Button size="sm" variant="outline" onClick={async () => {
@@ -262,12 +325,17 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
                             const clienteSnap = await getDoc(doc(db, "clientes", prestamo.clienteId));
                             await generarReciboPago({ ...p, fecha: p.fecha?.toDate ? p.fecha.toDate().toISOString() : new Date().toISOString() }, prestamo, clienteSnap.data(), empresaSnap.data());
                           } catch (e) {
-                            console.error(e); toast.error("No se pudo generar el recibo. El cobro permanece registrado.");
+                            console.error(e);
                           }
                         }}>
                           <FileText className="h-4 w-4 mr-2" /> Recibo
                         </Button>
-
+                        {!p.anulado && <Button variant="outline" size="sm" onClick={async () => { try { await apiPost("/api/email/recibo", { reciboId: p.id }); toast.success("Recibo enviado o ya entregado."); } catch (e) { toast.error(e instanceof Error ? e.message : "Correo pendiente"); } }}>Reenviar correo</Button>}
+                        {(userData?.rol === 'dueño' || userData?.rol === 'admin' || userData?.rol === 'superadmin') && (
+                          <Button size="sm" variant="destructive" disabled={p.anulado} onClick={() => handleDeletePago({ id: p.id, anulado: p.anulado })}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -278,7 +346,35 @@ export default function PrestamoDetallePage({ params }: { params: Promise<{ id: 
         </Card>
       </div>
 
-      <details className="rounded-lg border bg-card p-4 text-sm"><summary className="cursor-pointer font-medium">Correcciones del historial financiero</summary><p className="mt-3 text-muted-foreground">Los créditos y cobros se conservan. Para corregir un registro, crea una gestión administrativa y adjunta la referencia; los reversos requieren revisión y conciliación.</p><Link className="mt-3 inline-block underline" href={'/gestion?cliente=' + prestamo.clienteId}>Crear gestión de revisión</Link></details>
+      <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-amber-600">¿Anular este préstamo?</DialogTitle>
+            <DialogDescription>
+              El préstamo y sus cuotas conservarán el historial como anulados. Se generará una compensación del desembolso en caja. Solo procede si no hay cobros vigentes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="motivoAnulacionInput" className="text-xs font-semibold">
+              Motivo de la anulación (mínimo 10 caracteres) *
+            </Label>
+            <Input
+              id="motivoAnulacionInput"
+              placeholder="Indica la razón por la cual se anula el préstamo..."
+              value={motivoAnulacion}
+              onChange={(e) => setMotivoAnulacion(e.target.value)}
+              className="text-xs"
+            />
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setDeleteModalOpen(false)} disabled={isDeleting}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeletePrestamo} disabled={isDeleting || motivoAnulacion.trim().length < 10}>
+              {isDeleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Sí, anular crédito
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

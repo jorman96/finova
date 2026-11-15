@@ -74,7 +74,7 @@ export default async function PortalClienteDashboard({ params }: { params: Promi
               <Image width={160} height={80} unoptimized src={empresa.logoUrl} alt="Logo" className="h-8 object-contain" />
             ) : (
               <div className="h-8 w-8 bg-primary/10 rounded-full flex items-center justify-center">
-                <span className="font-bold text-primary">{String(empresa.nombre || "Finova").charAt(0)}</span>
+                <span className="font-bold text-primary">{empresa.nombre.charAt(0)}</span>
               </div>
             )}
             <span className="font-bold text-lg hidden sm:block">{empresa.nombre}</span>

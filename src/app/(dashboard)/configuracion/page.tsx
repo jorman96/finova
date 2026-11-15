@@ -1,45 +1,38 @@
 "use client";
+import Image from "next/image";
+import { errorMessage } from "@/lib/errors";
 
-import { SecurityReset } from '@/components/admin/SecurityReset';
-import { ProfileForm } from '@/components/configuracion/ProfileForm';
-import Link from 'next/link';
-import { UserAccessDialog } from "@/components/configuracion/UserAccessDialog";
-
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { ResetValoresDialog } from "@/components/configuracion/ResetValoresDialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle } from "@/components/ui/card";
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from "@/components/ui/table";
+import { Tabs,TabsContent,TabsList,TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
-import { Save, Loader2, Moon, Sun, Monitor, Plus, Trash2, RotateCcw, AlertTriangle, ShieldCheck, UserPlus } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { auth,db } from "@/lib/firebase";
+import { useFinanceRequest } from "@/lib/use-finance-request";
+import { useResource } from "@/lib/use-resource";
+import type { Usuario } from "@/types";
+import { InyeccionCapital,MovimientoBitacoraCapital } from "@/types";
+import { signOut } from "firebase/auth";
+import { collection,getDocs,query,where } from "firebase/firestore";
+import { AlertTriangle,Loader2,LogOut,Monitor,Moon,Plus,RotateCcw,Save,ShieldCheck,Sun,Trash2,UserPlus } from "lucide-react";
 import { useTheme } from "next-themes";
-import { db } from "@/lib/firebase";
+import { useRouter } from "next/navigation";
+import { useEffect,useState } from "react";
 import { toast } from "sonner";
-import { InyeccionCapital, MovimientoBitacoraCapital } from "@/types";
-import { ResetValoresDialog } from "@/components/configuracion/ResetValoresDialog";
-import { LoadError } from '@/components/ListPagination';
-import { apiPost } from '@/lib/api-client';
 
 export default function ConfiguracionPage() {
   const { user, userData } = useAuth();
+  const finance = useFinanceRequest();
   const { theme, setTheme } = useTheme();
+  const router = useRouter();
 
   const [loading, setLoading] = useState(false);
-  const [controlledCapital, setControlledCapital] = useState(false);
-  const [capitalReady, setCapitalReady] = useState(process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED !== 'true');
-  const [loadedEmpresaId, setLoadedEmpresaId] = useState(''), [empresaError, setEmpresaError] = useState('');
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_CAPITAL_PAYMENTS_ENABLED !== 'true') return;
-    let active = true;
-    apiPost<{ enabled: boolean }>('/api/capital/summary', {}).then(v => { if (active) { setControlledCapital(v.enabled); setCapitalReady(true); } }).catch(() => { if (active) setEmpresaError('No se pudo comprobar el control de capital. Reintenta antes de modificar la configuración.'); });
-    return () => { active = false; };
-  }, [userData?.empresaId]);
   const [empresaData, setEmpresaData] = useState({
     nombre: "Finova Capital",
     moneda: "USD",
@@ -61,7 +54,6 @@ export default function ConfiguracionPage() {
   const [nuevoBanco, setNuevoBanco] = useState({ banco: "", numero: "", tipo: "ahorros", titular: "" });
 
   const handleAddBanco = () => {
-    if (controlledCapital) { toast.info('Las cuentas de origen están protegidas mientras opera Pagos de capital. Su modificación requiere conciliación.'); return; }
     if (!nuevoBanco.banco || !nuevoBanco.numero) return;
     const newBanco = {
       id: Date.now().toString(),
@@ -71,130 +63,61 @@ export default function ConfiguracionPage() {
     setNuevoBanco({ banco: "", numero: "", tipo: "ahorros", titular: "" });
   };
 
-  const handleInyectarCapital = async () => {
-    if (controlledCapital) { toast.info('Registra el aporte recibido desde Pagos de capital para conservar su comprobante y auditoría.'); return; }
-    if (!nuevaInyeccion.monto || nuevaInyeccion.monto <= 0) {
-      toast.error("Ingrese un monto válido");
-      return;
-    }
-    const inyeccionId = Date.now().toString();
-    const inyeccion: InyeccionCapital = {
-      id: inyeccionId,
-      monto: nuevaInyeccion.monto,
-      fecha: new Date().toISOString(),
-      observaciones: nuevaInyeccion.observaciones.trim() || "Aporte de capital",
-      registradoPor: userData?.nombre || "Dueño"
-    };
-
-    const movimientoBitacora: MovimientoBitacoraCapital = {
-      id: inyeccionId,
-      tipo: 'inyeccion',
-      monto: nuevaInyeccion.monto,
-      fecha: inyeccion.fecha,
-      motivo: inyeccion.observaciones,
-      registradoPor: userData?.nombre || "Dueño",
-      usuarioEmail: user?.email || "",
-      usuarioRol: userData?.rol || "dueño",
-      inyeccionIdRef: inyeccionId
-    };
-
-    // Save locally first to show in UI
-    const updatedInyecciones = [...(empresaData.inyeccionesCapital || []), inyeccion];
-    const updatedBitacora = [movimientoBitacora, ...(empresaData.bitacoraCapital || [])];
-
-    setEmpresaData(prev => ({
-      ...prev,
-      inyeccionesCapital: updatedInyecciones,
-      bitacoraCapital: updatedBitacora
-    }));
-
-    // Save to Firestore immediately
-    try {
-      if (userData?.empresaId) {
-        const { doc, setDoc } = await import("firebase/firestore");
-        await setDoc(doc(db, "empresas", userData.empresaId), {
-          inyeccionesCapital: updatedInyecciones,
-          bitacoraCapital: updatedBitacora
-        }, { merge: true });
-        toast.success("Capital inyectado y registrado en la bitácora");
-      }
-    } catch (e: any) {
-      toast.error("Error al guardar inyección: " + e.message);
-    }
-
-    setNuevaInyeccion({ monto: 0, observaciones: "" });
-    setIsInyeccionModalOpen(false);
+  const reloadCompany = async () => {
+    if (!userData?.empresaId) return;
+    const { doc, getDoc } = await import("firebase/firestore");
+    const snap = await getDoc(doc(db, "empresas", userData.empresaId));
+    if (snap.exists()) setEmpresaData(prev => ({ ...prev, ...snap.data() }));
   };
-
-  const handleConfirmarReversion = async () => {
-    if (controlledCapital) { toast.info('Los aportes están protegidos. Registra su devolución desde Pagos de capital; los aportes históricos requieren conciliación.'); return; }
-    if (!inyeccionARevertir || !userData?.empresaId) return;
-    setIsReverting(true);
-
+  const handleInyectarCapital = async () => {
+    setLoading(true);
     try {
-      const updatedInyecciones = (empresaData.inyeccionesCapital || []).filter(iny => iny.id !== inyeccionARevertir.id);
-
-      const motivoFinal = motivoReversion.trim() || `Reversión/Anulación de inyección de $${inyeccionARevertir.monto.toFixed(2)} (${inyeccionARevertir.observaciones})`;
-
-      const movimientoBitacora: MovimientoBitacoraCapital = {
-        id: Date.now().toString(),
-        tipo: 'reversion',
-        monto: -inyeccionARevertir.monto,
-        fecha: new Date().toISOString(),
-        motivo: `${motivoFinal} (Inyección original del ${new Date(inyeccionARevertir.fecha).toLocaleDateString()}: "${inyeccionARevertir.observaciones}")`,
-        registradoPor: userData?.nombre || "Dueño",
-        usuarioEmail: user?.email || "",
-        usuarioRol: userData?.rol || "dueño",
-        inyeccionIdRef: inyeccionARevertir.id
-      };
-
-      const updatedBitacora = [movimientoBitacora, ...(empresaData.bitacoraCapital || [])];
-
-      setEmpresaData(prev => ({
-        ...prev,
-        inyeccionesCapital: updatedInyecciones,
-        bitacoraCapital: updatedBitacora
-      }));
-
-      const { doc, setDoc } = await import("firebase/firestore");
-      await setDoc(doc(db, "empresas", userData.empresaId), {
-        inyeccionesCapital: updatedInyecciones,
-        bitacoraCapital: updatedBitacora
-      }, { merge: true });
-
-      toast.success("Inyección revertida exitosamente y asentada en la bitácora");
-      setIsRevertModalOpen(false);
-      setInyeccionARevertir(null);
-      setMotivoReversion("");
-    } catch (e: any) {
-      console.error("Error al revertir inyección:", e);
-      toast.error("Error al revertir la inyección: " + e.message);
-    } finally {
-      setIsReverting(false);
-    }
+      await finance.submit({ action: "capital", monto: nuevaInyeccion.monto, motivo: nuevaInyeccion.observaciones.trim() || "Aporte de capital" });
+      await reloadCompany(); finance.reset(); setNuevaInyeccion({ monto: 0, observaciones: "" }); setIsInyeccionModalOpen(false);
+      toast.success("Aporte registrado con auditoría.");
+    } catch (error) { toast.error(error instanceof Error ? errorMessage(error) : "Error al registrar aporte"); }
+    finally { setLoading(false); }
+  };
+  const handleConfirmarReversion = async () => {
+    if (!inyeccionARevertir) return;
+    setIsReverting(true);
+    try {
+      await finance.submit({ action: "reverse_capital", inyeccionId: inyeccionARevertir.id, motivo: motivoReversion });
+      await reloadCompany(); finance.reset(); setIsRevertModalOpen(false); setInyeccionARevertir(null); setMotivoReversion("");
+      toast.success("Aporte revertido; el registro original se conserva.");
+    } catch (error) { toast.error(error instanceof Error ? errorMessage(error) : "Error al revertir"); }
+    finally { setIsReverting(false); }
   };
 
   const handleRemoveBanco = (id: string) => {
-    if (controlledCapital) { toast.info('No se puede retirar una cuenta de origen mientras los fondos están bajo control. Requiere conciliación.'); return; }
     setEmpresaData(prev => ({ ...prev, cuentasBancarias: (prev.cuentasBancarias || []).filter(c => c.id !== id) }));
   };
 
-  // Never save placeholder defaults while the existing company is still loading.
+  // Cargar datos reales de la empresa si existen
   useEffect(() => {
-    const empresaId = userData?.empresaId;
-    if (!empresaId) return;
-    let current = true;
-    import('firebase/firestore').then(async ({ doc, getDoc }) => {
-      const snap = await getDoc(doc(db, 'empresas', empresaId));
-      if (!snap.exists()) throw new Error('No se encuentra la financiera.');
-      if (current) { setEmpresaData(previous => ({ ...previous, ...snap.data() })); setLoadedEmpresaId(empresaId); }
-    }).catch(() => { if (current) setEmpresaError('No se pudo cargar la configuración. No se guardarán datos por defecto.'); });
-    return () => { current = false; };
+    if (userData?.empresaId) {
+      import("firebase/firestore").then(({ doc, getDoc }) => {
+        getDoc(doc(db, "empresas", userData.empresaId)).then((snap) => {
+          if (snap.exists()) {
+            setEmpresaData(prev => ({ ...prev, ...snap.data() }));
+          }
+        });
+      });
+    }
   }, [userData?.empresaId]);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push("/login");
+    } catch {
+      toast.error("Error al cerrar sesión");
+    }
+  };
 
   const handleSaveEmpresa = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userData?.empresaId || loadedEmpresaId !== userData.empresaId || !capitalReady) return;
+    if (!userData?.empresaId) return;
     setLoading(true);
 
     try {
@@ -203,38 +126,30 @@ export default function ConfiguracionPage() {
 
       // Si seleccionó un nuevo logo, subirlo a Storage
       if (logoFile) {
-        const { ref, uploadBytes, getDownloadURL } = await import("firebase/storage");
-        const { storage } = await import("@/lib/firebase");
-        const logoRef = ref(storage, `empresas/${userData.empresaId}/logo_${Date.now()}.png`);
-        const snapshot = await uploadBytes(logoRef, logoFile);
-        newLogoUrl = await getDownloadURL(snapshot.ref);
+        const { uploadFileToStorage } = await import("@/lib/storage");
+        newLogoUrl = await uploadFileToStorage(logoFile, `empresas/${userData.empresaId}/logo_${crypto.randomUUID()}.png`);
       }
 
       await setDoc(doc(db, "empresas", userData.empresaId), {
         nombre: empresaData.nombre,
-        ...(!controlledCapital ? { moneda: empresaData.moneda, capitalInicial: parseFloat(empresaData.capitalInicial.toString()) || 0, cuentasBancarias: empresaData.cuentasBancarias || [] } : {}),
+        moneda: empresaData.moneda,
         tasaMoraDefecto: empresaData.tasaMoraDefecto,
-        logoUrl: newLogoUrl
+
+        cuentasBancarias: empresaData.cuentasBancarias || [],
+        logoUrl: newLogoUrl,
+
       }, { merge: true });
 
       setEmpresaData(prev => ({ ...prev, logoUrl: newLogoUrl }));
       setLogoFile(null);
       toast.success("Configuración de empresa guardada");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error("Error al guardar: " + error.message);
+      toast.error("Error al guardar: " + errorMessage(error));
     } finally {
       setLoading(false);
     }
   };
-
-  const securityReset = userData?.rol === 'dueño' && userData.empresaId && <section className="space-y-2 rounded-xl border bg-card p-4">
-            <h2 className="font-semibold">Borrado de seguridad</h2>
-            <p className="text-sm text-muted-foreground">Puedes autorizar un borrado único por categorías. Solo el superadmin puede ejecutarlo.</p>
-            <SecurityReset empresaId={userData.empresaId} nombre={empresaData.nombre || 'Tu financiera'} owner />
-          </section>;
-  if (empresaError) return <div className="space-y-4"><LoadError message={empresaError} />{securityReset}</div>;
-  if (loadedEmpresaId !== userData?.empresaId || !capitalReady) return <div className="space-y-4"><p role="status">Consultando configuración de la financiera…</p>{securityReset}</div>;
 
   return (
     <div className="space-y-6">
@@ -244,7 +159,7 @@ export default function ConfiguracionPage() {
       </div>
 
       <Tabs defaultValue="perfil" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 max-w-[600px]">
+        <TabsList className="grid w-full grid-cols-5 max-w-[600px]">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="empresa">Empresa</TabsTrigger>
           <TabsTrigger value="bancos">Cajas y Bancos</TabsTrigger>
@@ -253,7 +168,35 @@ export default function ConfiguracionPage() {
         </TabsList>
 
         <TabsContent value="perfil" className="space-y-4 pt-4">
-          <ProfileForm />
+          <Card className="max-w-2xl">
+            <CardHeader>
+              <CardTitle>Perfil del Usuario</CardTitle>
+              <CardDescription>Información de la cuenta de acceso actual.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Nombre</Label>
+                <Input value={userData?.nombre || "Usuario"} disabled />
+              </div>
+              <div className="space-y-2">
+                <Label>Correo Electrónico</Label>
+                <Input value={user?.email || "Usuario no identificado"} disabled />
+              </div>
+              <div className="space-y-2">
+                <Label>Rol Actual</Label>
+                <div className="flex">
+                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary ring-1 ring-inset ring-primary/20 uppercase">
+                    {userData?.rol || "desconocido"}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-between border-t p-6">
+              <Button variant="destructive" onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" /> Cerrar Sesión
+              </Button>
+            </CardFooter>
+          </Card>
         </TabsContent>
 
         <TabsContent value="empresa" className="space-y-4 pt-4">
@@ -268,7 +211,7 @@ export default function ConfiguracionPage() {
                   <Label>Logotipo de la Financiera</Label>
                   <div className="flex items-center gap-4">
                     {empresaData.logoUrl && (
-                      <img src={empresaData.logoUrl} alt="Logo" className="w-16 h-16 object-contain rounded border" />
+                      <Image width={160} height={80} unoptimized src={empresaData.logoUrl} alt="Logo" className="w-16 h-16 object-contain rounded border" />
                     )}
                     <Input
                       type="file"
@@ -292,11 +235,11 @@ export default function ConfiguracionPage() {
                   <Label>Capital Inicial (Inversión Inicial)</Label>
                   <Input
                     type="number"
-                    value={empresaData.capitalInicial}
+                    readOnly value={empresaData.capitalInicial}
                     onChange={e => setEmpresaData({...empresaData, capitalInicial: parseFloat(e.target.value) || 0})}
-                    disabled={controlledCapital || (userData?.rol !== 'dueño' && userData?.rol !== 'superadmin')}
+                    disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
                   />
-                  <p className="text-xs text-muted-foreground">{controlledCapital ? 'El capital y sus fuentes están protegidos. Gestiona nuevos aportes y devoluciones desde Pagos de capital.' : 'Monto total con el que iniciaste el negocio originalmente.'}</p>
+                  <p className="text-xs text-muted-foreground">Monto total con el que iniciaste el negocio originalmente.</p>
                 </div>
 
                 {userData?.empresaId && (
@@ -306,9 +249,8 @@ export default function ConfiguracionPage() {
                         <Label className="text-base font-bold">Gestión de Capital e Inyecciones</Label>
                         <p className="text-xs text-muted-foreground">Registra aportes, revierte errores y consulta la bitácora de auditoría.</p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {controlledCapital && <Link className="rounded-lg border px-3 py-2 text-sm underline" href="/capital">Gestionar aportes en Pagos de capital</Link>}
-                        <Button size="sm" variant="outline" disabled={controlledCapital || userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'} onClick={() => setIsInyeccionModalOpen(true)}>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'} onClick={() => setIsInyeccionModalOpen(true)}>
                           <Plus className="mr-2 h-4 w-4" /> Inyectar Capital
                         </Button>
                       </div>
@@ -533,7 +475,7 @@ export default function ConfiguracionPage() {
                 {userData?.empresaId && (
                   <div className="pt-4 mt-4 border-t space-y-3">
                     <Label className="text-primary font-bold">Portal Público para Clientes</Label>
-                    <p className="text-xs text-muted-foreground">Comparte este enlace con tus clientes para que puedan consultar sus saldos y fechas de pago con su cédula y un código enviado al correo registrado.</p>
+                    <p className="text-xs text-muted-foreground">Comparte este enlace con tus clientes para que puedan consultar sus saldos y fechas de pago ingresando solo su cédula.</p>
                     <div className="flex items-center gap-2">
                       <Input
                         readOnly
@@ -559,7 +501,7 @@ export default function ConfiguracionPage() {
                     value={empresaData.moneda}
                     onChange={e => setEmpresaData({...empresaData, moneda: e.target.value})}
                     placeholder="USD, EUR, MXN..."
-                    disabled={controlledCapital || userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
+                    disabled={userData?.rol !== 'dueño' && userData?.rol !== 'superadmin'}
                   />
                 </div>
               </CardContent>
@@ -582,7 +524,7 @@ export default function ConfiguracionPage() {
             <CardContent className="space-y-6">
               <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
                 <h4 className="font-medium text-sm">Agregar Nueva Cuenta</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Banco / Entidad</Label>
                     <Input placeholder="Ej. Banco Pichincha" value={nuevoBanco.banco} onChange={e => setNuevoBanco({...nuevoBanco, banco: e.target.value})} />
@@ -647,8 +589,6 @@ export default function ConfiguracionPage() {
         </TabsContent>
 
         <TabsContent value="sistema" className="space-y-4 pt-4">
-          {securityReset}
-
           <Card className="max-w-2xl">
             <CardHeader>
               <CardTitle>Preferencias Visuales</CardTitle>
@@ -687,24 +627,8 @@ export default function ConfiguracionPage() {
             </CardContent>
           </Card>
 
-          {/* Conservación del historial: Reinicio de Valores Financieros */}
           {(userData?.rol === 'dueño' || userData?.rol === 'superadmin') && (
-            <Card className="max-w-2xl border-destructive/40 shadow-xs">
-              <CardHeader className="pb-3">
-                <div className="flex items-center gap-2 text-destructive">
-                  <AlertTriangle className="h-5 w-5" />
-                  <CardTitle className="text-base font-bold text-destructive">
-                    Conservación del historial y respaldos
-                  </CardTitle>
-                </div>
-                <CardDescription>
-                  Conserva el historial financiero y descarga los registros de tu empresa. Los saldos y los usuarios existentes no se reinician.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResetValoresDialog />
-              </CardContent>
-            </Card>
+            <Card className="max-w-2xl"><CardHeader><CardTitle>Respaldo y conservación del historial</CardTitle><CardDescription>Exporta los datos de tu empresa y utiliza anulaciones auditadas para corregir operaciones.</CardDescription></CardHeader><CardContent><ResetValoresDialog /></CardContent></Card>
           )}
         </TabsContent>
       </Tabs>
@@ -715,27 +639,46 @@ export default function ConfiguracionPage() {
 // Componente para la pestaña de Equipo
 function EquipoTab() {
   const { userData } = useAuth();
-  const [miembros, setMiembros] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Nuevo Miembro
+  const [revision, setRevision] = useState(0);
+  const { data: miembrosData, loading } = useResource<(Usuario & { id: string })[]>(JSON.stringify([userData?.empresaId, revision]), async () => {
+    if (!userData?.empresaId) return [];
+    const snap = await getDocs(query(collection(db, "usuarios"), where("empresaId", "==", userData.empresaId)));
+    return snap.docs.map(d => ({ ...d.data(), id: d.id } as Usuario & { id: string }));
+  });
+  const miembros = miembrosData || [];
+  const loadMiembros = () => setRevision(n => n + 1);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [nuevo, setNuevo] = useState({ nombre: "", email: "", password: "", rol: "cajero" });
+  const [creando, setCreando] = useState(false);
 
-  useEffect(() => {
-    if (userData?.empresaId) {
-      loadMiembros();
-    }
-  }, [userData?.empresaId]);
-
-  const loadMiembros = async () => {
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreando(true);
     try {
-      const q = query(collection(db, "usuarios"), where("empresaId", "==", userData?.empresaId));
-      const snap = await getDocs(q);
-      setMiembros(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (e) {
-      console.error(e);
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...nuevo,
+          empresaId: userData?.empresaId,
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error creando usuario");
+
+      toast.success(`Usuario ${nuevo.rol} creado.`);
+      setIsModalOpen(false);
+      setNuevo({ nombre: "", email: "", password: "", rol: "cajero" });
+      loadMiembros();
+    } catch (error: unknown) {
+      toast.error(errorMessage(error));
     } finally {
-      setLoading(false);
+      setCreando(false);
     }
   };
 
@@ -756,11 +699,50 @@ function EquipoTab() {
           <CardTitle>Equipo de Trabajo</CardTitle>
           <CardDescription>Crea cuentas para tus cajeros y cobradores.</CardDescription>
         </div>
-        <Button onClick={() => setIsModalOpen(true)}><UserPlus className="mr-2 h-4 w-4" /> Nuevo miembro</Button>
-        <UserAccessDialog open={isModalOpen} onOpenChange={setIsModalOpen}
-          empresaId={userData?.empresaId || ""} empresaNombre="Tu financiera"
-          allowedRoles={["cajero", "cobrador", "admin"]}
-          onCreated={() => { toast.success("Cuenta de acceso creada correctamente."); void loadMiembros(); }} />
+        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+          <DialogTrigger render={<Button />}>
+            <UserPlus className="mr-2 h-4 w-4" /> Nuevo Miembro
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Crear Nuevo Empleado</DialogTitle>
+              <DialogDescription>
+                El usuario podrá iniciar sesión inmediatamente con el correo y contraseña que le asignes.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleCreateUser} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Nombre del Empleado</Label>
+                <Input required value={nuevo.nombre} onChange={e => setNuevo({...nuevo, nombre: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Correo Electrónico (Login)</Label>
+                <Input type="email" required value={nuevo.email} onChange={e => setNuevo({...nuevo, email: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Contraseña</Label>
+                <Input type="password" required value={nuevo.password} onChange={e => setNuevo({...nuevo, password: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Rol del Sistema</Label>
+                <Select value={nuevo.rol} onValueChange={val => setNuevo({...nuevo, rol: val || "cajero"})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cajero">Cajero (Solo registra cobros)</SelectItem>
+                    <SelectItem value="cobrador">Cobrador (Solo ve la Mora)</SelectItem>
+                    <SelectItem value="admin">Administrador (Acceso total local)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={creando}>
+                  {creando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Crear Cuenta
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </CardHeader>
       <CardContent>
         {loading ? (

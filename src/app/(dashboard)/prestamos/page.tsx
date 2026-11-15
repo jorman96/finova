@@ -1,55 +1,32 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { EliminarPrestamoDialog } from "@/components/prestamos/EliminarPrestamoDialog";
+import { NotificarMorososButton } from "@/components/prestamos/NotificarMorososButton";
+import { NuevoPrestamoDialog } from "@/components/prestamos/NuevoPrestamoDialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
+Table,TableBody,TableCell,TableHead,TableHeader,TableRow
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Search, Eye, FileText, CheckCircle } from "lucide-react";
 import { Prestamo } from "@/types";
-import { collection, query, orderBy, onSnapshot, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { NuevoPrestamoDialog } from "@/components/prestamos/NuevoPrestamoDialog";
-import { NotificarMorososButton } from "@/components/prestamos/NotificarMorososButton";
+import { Eye,Search } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
-import { useListFilter } from '@/hooks/use-list-filter';
+import { PageControls } from "@/components/PageControls";
 import { useAuth } from "@/contexts/AuthContext";
-import { matchesText } from '@/lib/client-search';
-import { ListPagination, pageItems, LoadError } from '@/components/ListPagination';
+import { useTenantPage } from "@/lib/use-tenant-page";
 
 export default function PrestamosPage() {
   const { userData } = useAuth();
-  const [prestamos, setPrestamos] = useState<Prestamo[]>([]);
-  const [searchTerm, setSearchTerm] = useListFilter('loans-search');
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(''), [status, setStatus] = useListFilter('loans-status', 'todos'), [page, setPage] = useState(0);
+  const paging = useTenantPage<Prestamo>("prestamos", userData?.empresaId, "createdAt");
+  const prestamos = paging.rows;
+  const [searchTerm, setSearchTerm] = useState("");
+  const loading = paging.loading;
 
-  useEffect(() => {
-    if (!userData?.empresaId) return;
-
-    const q = query(
-      collection(db, "prestamos"),
-      where("empresaId", "==", userData.empresaId),
-      orderBy("createdAt", "desc")
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Prestamo));
-      setLoadError(''); setPrestamos(data);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error al obtener préstamos:", error);
-      setLoadError('No se pudieron cargar los créditos. Reintenta antes de tomar decisiones.');
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [userData?.empresaId]);
-
-  const filteredPrestamos = prestamos.filter(p =>
-    matchesText(`${p.clienteNombre || ''} ${p.id}`, searchTerm) && (status === 'todos' || p.estado === status)
+  const filteredPrestamos = prestamos.filter(p => 
+    p.clienteNombre.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -60,29 +37,28 @@ export default function PrestamosPage() {
           <p className="text-muted-foreground">Administra la cartera de créditos y monitorea su estado.</p>
         </div>
         {(userData?.rol === 'dueño' || userData?.rol === 'superadmin' || userData?.rol === 'admin') && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2">
             <NotificarMorososButton />
-            <NuevoPrestamoDialog />
+            <NuevoPrestamoDialog onPrestamoCreado={paging.refresh} />
           </div>
         )}
       </div>
 
-      {loadError && <LoadError message={loadError} />}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center space-x-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            aria-label="Buscar créditos" placeholder="Nombre del cliente o referencia del crédito"
-            className="pl-8"
+          <Input 
+            placeholder="Buscar por cliente..." 
+            className="pl-8" 
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setPage(0); }}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <select aria-label="Estado del crédito" className="min-h-11 rounded-md border bg-background px-3 text-sm" value={status} onChange={e => { setStatus(e.target.value); setPage(0); }}><option value="todos">Todos los estados</option><option value="activo">Activo</option><option value="moroso">Moroso</option><option value="completado">Completado</option><option value="cancelado">Cancelado</option></select>
       </div>
 
-      <div className="space-y-3 md:hidden">{loading ? <p role="status">Cargando créditos…</p> : !filteredPrestamos.length ? <p className="rounded-lg border border-dashed p-5 text-sm">{loadError ? 'No se pudo consultar la cartera.' : 'No hay créditos que coincidan con los filtros.'}</p> : pageItems(filteredPrestamos, page).map(prestamo => <article key={prestamo.id} className="rounded-xl border bg-card p-4 space-y-3"><div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">{prestamo.clienteNombre}</h3><Badge variant={prestamo.estado === 'moroso' ? 'destructive' : 'secondary'}>{prestamo.estado}</Badge></div><div className="grid grid-cols-2 gap-3 text-sm"><p>Monto entregado<strong className="block">${prestamo.monto.toFixed(2)}</strong></p><p>Saldo pendiente<strong className="block">${prestamo.saldoRestante.toFixed(2)}</strong></p></div><p className="text-xs text-muted-foreground">Desembolso: {prestamo.fechaDesembolso || 'Por revisar'} · {prestamo.frecuenciaPago}</p><Link className="inline-flex min-h-11 items-center rounded-lg border px-3 text-sm" href={'/prestamos/' + prestamo.id}>Ver crédito</Link></article>)}</div>
-      <div className="hidden border rounded-md bg-card md:block">
+      {paging.error && <p role="alert" className="text-destructive">{paging.error}</p>}
+      <PageControls {...paging} />
+      <div className="border rounded-md bg-card">
         <Table>
           <TableHeader>
             <TableRow>
@@ -105,11 +81,11 @@ export default function PrestamosPage() {
             ) : filteredPrestamos.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  {loadError ? 'La lista no está disponible.' : 'No hay créditos que coincidan con la búsqueda y el estado.'}
+                  No se encontraron préstamos.
                 </TableCell>
               </TableRow>
             ) : (
-              pageItems(filteredPrestamos, page).map((prestamo) => (
+              filteredPrestamos.map((prestamo) => (
                 <TableRow key={prestamo.id}>
                   <TableCell className="font-medium">
                     {prestamo.clienteNombre}
@@ -126,11 +102,19 @@ export default function PrestamosPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link href={`/prestamos/${prestamo.id}`}>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="mr-2 h-4 w-4" /> Ver
-                      </Button>
-                    </Link>
+                    <div className="flex items-center justify-end gap-1">
+                      <Link href={`/prestamos/${prestamo.id}`}>
+                        <Button variant="ghost" size="sm">
+                          <Eye className="mr-2 h-4 w-4" /> Ver
+                        </Button>
+                      </Link>
+                      {(userData?.rol === 'dueño' || userData?.rol === 'superadmin' || userData?.rol === 'admin') && (
+                        <EliminarPrestamoDialog
+                          prestamo={prestamo}
+                          onDeleted={paging.refresh}
+                        />
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -138,7 +122,6 @@ export default function PrestamosPage() {
           </TableBody>
         </Table>
       </div>
-      {!loading && !loadError && <ListPagination total={filteredPrestamos.length} page={page} onPage={setPage} />}
     </div>
   );
 }

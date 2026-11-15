@@ -1,32 +1,31 @@
 "use client";
 
-import { useState, useEffect, useId } from "react";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
-} from "@/components/ui/dialog";
 import { ClientePicker } from "@/components/clientes/ClientePicker";
-import { useUnsavedDialog } from '@/hooks/use-unsaved-dialog';
 import { Button } from "@/components/ui/button";
+import {
+Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Loader2 } from "lucide-react";
-import { collection, serverTimestamp, getDocs, runTransaction, doc, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { toast } from "sonner";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Cliente } from "@/types";
-import { generateAmortizationTable, AmortizationInput, CuotaProyectada } from "@/lib/amortization";
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
-import { businessDate } from '@/lib/business-date';
+import { AmortizationInput,CuotaProyectada,generateAmortizationTable } from "@/lib/amortization";
+import { businessDate } from "@/lib/business-date";
+import { db } from "@/lib/firebase";
+import { useFinanceRequest } from "@/lib/use-finance-request";
+import { Cliente } from "@/types";
+import { collection,getDocs,query,where } from "firebase/firestore";
+import { Loader2,Plus } from "lucide-react";
+import { useEffect,useState } from "react";
+import { toast } from "sonner";
 
-export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteId?: string }) {
+export function NuevoPrestamoDialog({ onPrestamoCreado }: { onPrestamoCreado?: () => void }) {
   const { userData } = useAuth();
-  const fieldId = useId();
+  const finance = useFinanceRequest();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [clientsLoading, setClientsLoading] = useState(false), [clientError, setClientError] = useState('');
-
+  
   // Form State
   const [clienteId, setClienteId] = useState("");
   const [monto, setMonto] = useState("");
@@ -37,45 +36,26 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
   const [numeroCuotas, setNumeroCuotas] = useState("");
   const [fechaDesembolso, setFechaDesembolso] = useState(businessDate());
   const [fechaPrimerPago, setFechaPrimerPago] = useState("");
-
+  
   const [simulacion, setSimulacion] = useState<CuotaProyectada[]>([]);
-  const [reviewed, setReviewed] = useState(false);
-  const [reviewStage, setReviewStage] = useState(false);
 
   useEffect(() => {
     if (open && userData?.empresaId) {
-      setClientsLoading(true); setClientError('');
       getDocs(query(collection(db, "clientes"), where("empresaId", "==", userData.empresaId))).then(snapshot => {
-        setClientes(snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Cliente)));
-      }).catch(() => { setClientes([]); setClientError('No se pudo cargar la lista de clientes. Cierra y vuelve a abrir el formulario.'); }).finally(() => setClientsLoading(false));
-      // Resetear el formulario al abrir
-      setClienteId(initialClienteId);
-      setMonto("");
-      setTasaInteres("");
-      setPeriodoTasa("mensual");
-      setTipoInteres("fijo");
-      setFrecuenciaPago("mensual");
-      setNumeroCuotas("");
-      setFechaPrimerPago("");
-      setSimulacion([]);
-      setReviewed(false); setReviewStage(false); setFechaDesembolso(businessDate());
+        setClientes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Cliente)));
+      }).catch(() => { setClientes([]); toast.error("No se pudo cargar la lista de clientes. Cierra e intenta de nuevo."); });
     }
-  }, [open, userData?.empresaId, initialClienteId]);
-
-  // Si el usuario cambia cualquier valor financiero, invalidamos la simulación vieja
-  useEffect(() => {
-    setSimulacion([]);
-    setReviewed(false);
-  }, [monto, tasaInteres, periodoTasa, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago, fechaDesembolso]);
-
-  const changeOpen = useUnsavedDialog(open, setOpen, !!(monto || tasaInteres || numeroCuotas || fechaPrimerPago), loading);
+  }, [open, userData?.empresaId]);
+  const simulationKey = JSON.stringify([monto, tasaInteres, periodoTasa, tipoInteres, frecuenciaPago, numeroCuotas, fechaPrimerPago]);
+  const [simulatedKey, setSimulatedKey] = useState("");
+  const validSimulation = simulatedKey === simulationKey;
 
   const handleSimular = () => {
     if (!monto || !tasaInteres || !numeroCuotas || !fechaPrimerPago) {
       toast.error("Llena todos los campos financieros para simular.");
       return;
     }
-
+    
     const input: AmortizationInput = {
       monto: Number(monto),
       tasaInteres: Number(tasaInteres),
@@ -85,18 +65,13 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
       numeroCuotas: Number(numeroCuotas),
       fechaPrimerPago
     };
-
-    try {
-      if (fechaPrimerPago < fechaDesembolso) throw new Error('El primer pago no puede ser anterior al desembolso.');
-      const resultado = generateAmortizationTable(input);
-      setSimulacion(resultado);
-      setReviewStage(true);
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo simular.'); }
+    
+    try { setSimulacion(generateAmortizationTable(input)); setSimulatedKey(simulationKey); } catch (error) { toast.error(error instanceof Error ? error.message : "Condiciones inválidas"); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (simulacion.length === 0 || !reviewed) {
+    if ((!validSimulation || simulacion.length === 0)) {
       toast.error("Por favor simula el préstamo antes de crearlo.");
       return;
     }
@@ -111,66 +86,10 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
 
     setLoading(true);
     try {
-      const clienteSeleccionado = clientes.find(c => c.id === clienteId);
-      if (!clienteSeleccionado || clientsLoading || clientError) throw new Error('Espera a que se cargue la lista y selecciona un cliente disponible.');
-      const totalInteres = simulacion.reduce((acc, c) => acc + c.interes, 0);
-      const totalPagar = simulacion.reduce((acc, c) => acc + c.totalCuota, 0);
-
-      // Crear préstamo
-      const prestamoData = {
-        empresaId: userData.empresaId,
-        clienteId,
-        clienteNombre: `${clienteSeleccionado?.nombres} ${clienteSeleccionado?.apellidos}`,
-        monto: Number(monto),
-        tasaInteres: Number(tasaInteres),
-        periodoTasa,
-        tipoInteres,
-        frecuenciaPago,
-        numeroCuotas: Number(numeroCuotas),
-        fechaDesembolso,
-        fechaPrimerPago,
-        totalInteres,
-        totalPagar,
-        saldoRestante: totalPagar,
-        estado: 'activo',
-        createdAt: serverTimestamp()
-      };
-
-      const prestamoRef = doc(collection(db, "prestamos"));
-      await runTransaction(db, async batch => {
-        const currentClient = await batch.get(doc(db, "clientes", clienteId));
-        if (!currentClient.exists() || currentClient.data().empresaId !== userData.empresaId) throw new Error("El cliente ya no está disponible. Vuelve a seleccionarlo.");
-        batch.set(prestamoRef, { ...prestamoData, clienteNombre: `${currentClient.data().nombres || ''} ${currentClient.data().apellidos || ''}`.trim() });
-
-      // Crear cuotas en Batch
-
-      simulacion.forEach(cuota => {
-        const cuotaRef = doc(collection(db, "cuotas"));
-        batch.set(cuotaRef, {
-          prestamoId: prestamoRef.id,
-          empresaId: userData.empresaId,
-          clienteId,
-          numeroCuota: cuota.numeroCuota,
-          fechaVencimiento: cuota.fechaVencimiento,
-          capital: cuota.capital,
-          interes: cuota.interes,
-          totalCuota: cuota.totalCuota,
-          saldoPendiente: cuota.saldoPendiente,
-          estado: 'pendiente',
-          montoPagado: 0,
-        });
-      });
-
-      // Actualizar estado del cliente a activo si estaba como nuevo
-      if (clienteSeleccionado?.estado === 'nuevo') {
-         const clienteRef = doc(db, "clientes", clienteId);
-         batch.update(clienteRef, { estado: 'activo' });
-      }
-
-      });
-
+      await finance.submit({ action: "loan", clienteId, monto: Number(monto), tasaInteres: Number(tasaInteres), periodoTasa, tipoInteres, frecuenciaPago, numeroCuotas: Number(numeroCuotas), fechaDesembolso, fechaPrimerPago });
       toast.success("Préstamo y tabla de amortización creados.");
       setOpen(false);
+      onPrestamoCreado?.();
     } catch (error) {
       console.error(error);
       toast.error(error instanceof Error ? error.message : "Error al crear el préstamo");
@@ -179,10 +98,8 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
     }
   };
 
-  if (!userData || !["superadmin", "dueño", "admin"].includes(userData.rol)) return null;
-
   return (
-    <Dialog open={open} onOpenChange={changeOpen}>
+    <Dialog open={open} onOpenChange={value => { if (loading) return; if (value) { finance.reset(); setClienteId(""); setMonto(""); setTasaInteres(""); setNumeroCuotas(""); setFechaPrimerPago(""); setSimulacion([]); setSimulatedKey(""); } setOpen(value); }}>
       <DialogTrigger render={<Button />}>
         <Plus className="mr-2 h-4 w-4" /> Nuevo Préstamo
       </DialogTrigger>
@@ -190,31 +107,29 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
         <DialogHeader>
           <DialogTitle>Registrar Nuevo Préstamo</DialogTitle>
           <DialogDescription>
-            Selecciona al cliente, configura las condiciones y revisa la simulación antes de registrar.
+            Configura las condiciones del crédito y genera la tabla de amortización.
+            Convención comercial: mes de 30 días y 4 semanas. Los abonos cubren primero intereses y luego capital.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <ol aria-label="Pasos del crédito" className="flex flex-wrap gap-3 text-sm"><li aria-current={!reviewStage ? 'step' : undefined} className={!reviewStage ? 'font-semibold' : 'text-muted-foreground'}>1. Cliente y condiciones</li><li aria-current={reviewStage ? 'step' : undefined} className={reviewStage ? 'font-semibold' : 'text-muted-foreground'}>2. Revisión y registro</li></ol>
-          {clientError && <p role="alert" className="text-destructive">{clientError}</p>}
-          <div hidden={reviewStage} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="credito-cliente">Cliente</Label>
-            <ClientePicker clientes={clientes} value={clienteId} onChange={id => { setClienteId(id); setReviewed(false); }} />
-            {clientsLoading && <p role="status" className="text-xs text-muted-foreground">Cargando clientes…</p>}
+            <ClientePicker clientes={clientes} value={clienteId} onChange={setClienteId} />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="text-sm">Fecha de desembolso<Input type="date" value={fechaDesembolso} onChange={e => setFechaDesembolso(e.target.value)} required /></label>
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor={`${fieldId}-0`}> Monto a Prestar ($)</Label>
-              <Input id={`${fieldId}-0`} type="number" min="0.01" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} required />
+              <Label>Monto a Prestar ($)</Label>
+              <Input type="number" value={monto} onChange={e => setMonto(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label>Tasa de Interés (%)</Label>
               <div className="flex gap-2">
-                <Input aria-label="Tasa de interés" type="number" min="0" step="0.01" value={tasaInteres} onChange={e => setTasaInteres(e.target.value)} required className="flex-1" />
-                <Select value={periodoTasa} onValueChange={(val: any) => val && setPeriodoTasa(val)}>
-                  <SelectTrigger aria-label="Periodicidad de la tasa" className="w-[120px]"><SelectValue /></SelectTrigger>
+                <Input type="number" step="0.01" value={tasaInteres} onChange={e => setTasaInteres(e.target.value)} required className="flex-1" />
+                <Select value={periodoTasa} onValueChange={val => (val === "mensual" || val === "anual") && setPeriodoTasa(val)}>
+                  <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="mensual">Mensual</SelectItem>
                     <SelectItem value="anual">Anual</SelectItem>
@@ -224,8 +139,8 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
             </div>
             <div className="space-y-2">
               <Label>Tipo de Interés</Label>
-              <Select value={tipoInteres} onValueChange={(val: any) => val && setTipoInteres(val)}>
-                <SelectTrigger aria-label="Tipo de Interés"><SelectValue /></SelectTrigger>
+              <Select value={tipoInteres} onValueChange={val => (val === "fijo" || val === "saldo_deudor") && setTipoInteres(val)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="fijo">Interés Fijo (Simple)</SelectItem>
                   <SelectItem value="saldo_deudor">Saldo Deudor (Francés)</SelectItem>
@@ -234,8 +149,8 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
             </div>
             <div className="space-y-2">
               <Label>Frecuencia de Pago</Label>
-              <Select value={frecuenciaPago} onValueChange={(val: any) => val && setFrecuenciaPago(val)}>
-                <SelectTrigger aria-label="Frecuencia de Pago"><SelectValue /></SelectTrigger>
+              <Select value={frecuenciaPago} onValueChange={val => (val === "diario" || val === "semanal" || val === "quincenal" || val === "mensual") && setFrecuenciaPago(val)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="diario">Diario</SelectItem>
                   <SelectItem value="semanal">Semanal</SelectItem>
@@ -245,27 +160,23 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`${fieldId}-1`}> Número de Cuotas</Label>
-              <Input id={`${fieldId}-1`} type="number" min="1" max="200" step="1" value={numeroCuotas} onChange={e => setNumeroCuotas(e.target.value)} required />
+              <Label>Número de Cuotas</Label>
+              <Input type="number" value={numeroCuotas} onChange={e => setNumeroCuotas(e.target.value)} required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`${fieldId}-2`}> Fecha de Primer Pago</Label>
-              <Input id={`${fieldId}-2`} type="date" value={fechaPrimerPago} onChange={e => setFechaPrimerPago(e.target.value)} required />
+              <Label>Fecha de Primer Pago</Label>
+              <Input type="date" value={fechaPrimerPago} onChange={e => setFechaPrimerPago(e.target.value)} required />
             </div>
           </div>
 
-          <label className="block space-y-2 text-sm">Fecha de desembolso<Input type="date" required value={fechaDesembolso} onChange={e => setFechaDesembolso(e.target.value)} /></label>
           <div className="flex justify-end pt-2">
-            <Button type="button" disabled={clientsLoading || !!clientError} variant="secondary" onClick={handleSimular}>
+            <Button type="button" variant="secondary" onClick={handleSimular}>
               Simular Cuotas
             </Button>
           </div>
 
-          </div>
-          {reviewStage && <Button type="button" variant="outline" onClick={() => { setReviewStage(false); setReviewed(false); }}>Editar condiciones</Button>}
-          {reviewStage && simulacion.length > 0 && <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2"><h3 className="font-semibold">Resumen para revisión</h3><p>Cliente: {clientes.find(c => c.id === clienteId)?.nombres} {clientes.find(c => c.id === clienteId)?.apellidos}</p><p>Monto entregado: ${Number(monto).toFixed(2)} · Tasa: {tasaInteres}% {periodoTasa} · {numeroCuotas} cuotas · Frecuencia: {frecuenciaPago}</p><p>Intereses: ${simulacion.reduce((v, c) => v + c.interes, 0).toFixed(2)} · Total por devolver: ${simulacion.reduce((v, c) => v + c.totalCuota, 0).toFixed(2)}</p><p>Primera cuota: ${simulacion[0].totalCuota.toFixed(2)} · Primer vencimiento: {simulacion[0].fechaVencimiento}</p><p className="text-xs text-muted-foreground">El cronograma distribuye los centavos para devolver exactamente el capital. Revisa las condiciones y el calendario con el cliente.</p></div>}
-          {reviewStage && simulacion.length > 0 && (
-            <div className="mt-4 border rounded-md max-h-48 overflow-auto bg-muted/20">
+          {(validSimulation && simulacion.length > 0) && (
+            <div className="mt-4 border rounded-md max-h-48 overflow-y-auto bg-muted/20">
               <table className="w-full text-sm text-left">
                 <thead className="bg-muted sticky top-0">
                   <tr>
@@ -282,23 +193,22 @@ export function NuevoPrestamoDialog({ initialClienteId = '' }: { initialClienteI
                     <tr key={i} className="border-t">
                       <td className="p-2">{c.numeroCuota}</td>
                       <td className="p-2">{c.fechaVencimiento}</td>
-                      <td className="p-2">${c.capital.toFixed(2)}</td>
-                      <td className="p-2">${c.interes.toFixed(2)}</td>
-                      <td className="p-2 font-medium">${c.totalCuota.toFixed(2)}</td>
-                      <td className="p-2">${c.saldoPendiente.toFixed(2)}</td>
+                      <td className="p-2">${c.capital}</td>
+                      <td className="p-2">${c.interes}</td>
+                      <td className="p-2 font-medium">${c.totalCuota}</td>
+                      <td className="p-2">${c.saldoPendiente}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-
-          {reviewStage && simulacion.length > 0 && <label className="flex items-start gap-3 text-sm"><input className="mt-1 size-4 shrink-0" type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} />Confirmo que revisé el cliente, las condiciones, el total por devolver y el calendario.</label>}
+          
           <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={() => changeOpen(false)}>Cancelar</Button>
-            <Button type="submit" disabled={loading || clientsLoading || !!clientError || !reviewStage || simulacion.length === 0 || !reviewed}>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="submit" disabled={loading || (!validSimulation || simulacion.length === 0)}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Registrar crédito revisado
+              Aprobar Préstamo
             </Button>
           </DialogFooter>
         </form>

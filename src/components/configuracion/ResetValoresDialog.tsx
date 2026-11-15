@@ -6,7 +6,7 @@ import { toast } from "sonner";
 export function ResetValoresDialog() {
   const [loading, setLoading] = useState(false);
   return <div className="space-y-2">
-    <p className="text-sm text-muted-foreground">El historial financiero se conserva. Usa anulaciones con motivo para corregir operaciones. Para pruebas, utiliza un proyecto Firebase separado. La descarga incluye registros de la empresa; los usuarios y los archivos adjuntos necesitan un respaldo separado.</p>
+    <p className="text-sm text-muted-foreground">El historial financiero se conserva. Usa anulaciones con motivo para corregir operaciones. Para pruebas, utiliza un proyecto Firebase separado.</p>
     <Button variant="outline" disabled={loading} onClick={async () => {
       setLoading(true);
       try {

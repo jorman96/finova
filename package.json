@@ -7,14 +7,9 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:clientes": "node --experimental-strip-types --test tests/client-search.test.ts tests/operations.test.ts",
-    "test:clientes:integration": "firebase emulators:exec --config firebase.test.json --project demo-finova --only auth,firestore \"node tests/client-delete.integration.mjs\"",
-    "test:security": "firebase emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage \"node --test tests/security-rules.test.mjs && node tests/client-delete.integration.mjs\"",
-    "test:backup": "node --test tests/backup-format.test.mjs",
-    "test:capital:compile": "tsc --target es2020 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --strict --outDir .test-build/capital src/lib/capital/core.ts src/lib/capital/service.ts",
-    "test:capital": "npm run test:capital:compile && firebase emulators:exec --config firebase.security-test.json --project demo-finova --only auth,firestore,storage \"node --test tests/capital.test.cjs && node tests/capital-api.integration.mjs\"",
-    "test:accounting:compile": "tsc --target es2020 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --strict --outDir .test-build/accounting src/lib/accounting/core.ts src/lib/accounting/service.ts",
-    "test:accounting": "npm run test:accounting:compile && firebase emulators:exec --config firebase.security-test.json --project demo-finova --only firestore \"node --test tests/accounting.test.cjs\""
+    "test": "tsc -p tsconfig.tests.json && node --test .test-build/tests/domain.test.js tests/excel.test.mjs",
+    "test:rules": "firebase emulators:exec --config firebase.emulators.json --project demo-finova --only firestore,storage \"node --test tests/rules.test.mjs\"",
+    "test:integration": "firebase emulators:exec --config firebase.emulators.json --project demo-finova --only auth,firestore,storage \"node tests/integration.mjs\""
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -30,7 +25,6 @@
     "lucide-react": "^1.17.0",
     "next": "^16.4.1",
     "next-themes": "^0.4.6",
-    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-hook-form": "^7.76.1",
@@ -39,13 +33,12 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "tw-animate-css": "^1.4.0",
-    "zod": "^4.6.7"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

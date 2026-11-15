@@ -1,24 +1,24 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
 
-import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DollarSign, Loader2, Landmark, CheckCircle2, FileUp } from "lucide-react";
-import { db } from "@/lib/firebase";
-import { doc, collection, writeBatch, serverTimestamp, increment } from "firebase/firestore";
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
-import { CuotaInversionista, InversionContrato } from "@/types";
 import { uploadFileToStorage } from "@/lib/storage";
+import { useFinanceRequest } from "@/lib/use-finance-request";
+import { CuotaInversionista,InversionContrato } from "@/types";
+import { CheckCircle2,DollarSign,FileUp,Landmark,Loader2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 interface RegistrarPagoInversionistaDialogProps {
   contrato: InversionContrato;
   cuota?: CuotaInversionista;
   onPagoCompletado?: () => void;
-  triggerButton?: React.ReactNode;
+  triggerButton?: React.ReactElement;
 }
 
 export function RegistrarPagoInversionistaDialog({
@@ -28,6 +28,7 @@ export function RegistrarPagoInversionistaDialog({
   triggerButton
 }: RegistrarPagoInversionistaDialogProps) {
   const { userData } = useAuth();
+  const finance = useFinanceRequest();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -42,8 +43,6 @@ export function RegistrarPagoInversionistaDialog({
   const [comprobanteFile, setComprobanteFile] = useState<File | null>(null);
 
   // Estimación de división Capital vs Interés para este pago
-  const interesCuota = cuota ? cuota.interes : 0;
-  const capitalCuota = cuota ? cuota.capital : montoPago;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,85 +57,25 @@ export function RegistrarPagoInversionistaDialog({
 
     setLoading(true);
     try {
-      const batch = writeBatch(db);
-      const pagoRef = doc(collection(db, "pagos_inversionistas"));
-
-      let comprobanteUrl: string | null = null;
-      if (comprobanteFile) {
-        const path = `inversionistas/${contrato.inversionistaId}/pagos/${Date.now()}_${comprobanteFile.name}`;
-        comprobanteUrl = await uploadFileToStorage(comprobanteFile, path);
-      }
-
-      // 1. Crear documento de pago al inversionista
-      const pagoData = {
-        empresaId: userData.empresaId,
-        inversionContratoId: contrato.id,
-        inversionistaId: contrato.inversionistaId,
-        inversionistaNombre: contrato.inversionistaNombre,
-        cuotaInversionistaId: cuota?.id || null,
-        numeroCuota: cuota?.numeroCuota || null,
-        monto: montoPago,
-        montoCapital: cuota ? Math.min(capitalCuota, montoPago) : montoPago,
-        montoInteres: cuota ? Math.max(0, montoPago - capitalCuota) : 0,
-        metodo: metodoPago,
-        cuentaOrigen: cuentaOrigen.trim() || "Caja General",
-        observaciones: observaciones.trim(),
-        comprobanteUrl,
-        fecha: serverTimestamp(),
-        registradoPor: userData.nombre || "Dueño"
-      };
-      batch.set(pagoRef, pagoData);
-
-      // 2. Si es pago de una cuota específica, actualizarla
-      if (cuota?.id) {
-        const cuotaRef = doc(db, "cuotas_inversionistas", cuota.id);
-        const nuevoMontoPagado = (cuota.montoPagado || 0) + montoPago;
-        const nuevoEstado = nuevoMontoPagado >= (cuota.totalCuota - 0.01) ? 'pagada' : 'parcial';
-        batch.update(cuotaRef, {
-          montoPagado: nuevoMontoPagado,
-          saldoRestante: Math.max(0, cuota.totalCuota - nuevoMontoPagado),
-          estado: nuevoEstado,
-          fechaPago: new Date().toISOString()
-        });
-      }
-
-      // 3. Actualizar contrato de inversión
-      const nuevoTotalPagado = (contrato.totalPagado || 0) + montoPago;
-      const nuevoSaldoContrato = Math.max(0, (contrato.totalPagar || contrato.montoTotal) - nuevoTotalPagado);
-      const estadoContrato = nuevoSaldoContrato <= 0.01 ? 'liquidado' : contrato.estado;
-
-      const contratoRef = doc(db, "inversion_contratos", contrato.id);
-      batch.update(contratoRef, {
-        totalPagado: nuevoTotalPagado,
-        saldoPendiente: nuevoSaldoContrato,
-        estado: estadoContrato
-      });
-
-      // 4. Actualizar totales del Inversionista
-      const inversionistaRef = doc(db, "inversionistas", contrato.inversionistaId);
-      batch.update(inversionistaRef, {
-        totalPagado: increment(montoPago),
-        saldoPendiente: increment(-montoPago)
-      });
-
-      await batch.commit();
-
+      let comprobanteUrl = null;
+      if (comprobanteFile) comprobanteUrl = await uploadFileToStorage(comprobanteFile, `inversionistas/${contrato.inversionistaId}/pagos/${crypto.randomUUID()}_${comprobanteFile.name}`);
+      await finance.submit({ action: "investor_payment", contratoId: contrato.id, ...(cuota ? { cuotaId: cuota.id } : {}), monto: montoPago, metodo: metodoPago, cuentaOrigen: cuentaOrigen || "Caja General", observaciones, comprobanteUrl });
       toast.success("Liquidación registrada exitosamente");
       setOpen(false);
       if (onPagoCompletado) {
         onPagoCompletado();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error al registrar pago a inversionista:", err);
-      toast.error("Error al registrar: " + err.message);
+      toast.error("Error al registrar: " + errorMessage(err));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={triggerButton ? (triggerButton as any) : <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" />}>
+    <Dialog open={open} onOpenChange={value => { if (loading) return; if (value) { finance.reset(); setMontoPago(saldoPendienteCuota); } setOpen(value); }}>
+      <DialogTrigger render={triggerButton ? triggerButton : <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" />}>
         {!triggerButton && (
           <>
             <DollarSign className="h-4 w-4" />
@@ -184,6 +123,7 @@ export function RegistrarPagoInversionistaDialog({
               type="number"
               step="0.01"
               min="0.01"
+              max={saldoPendienteCuota}
               value={montoPago || ""}
               onChange={e => setMontoPago(parseFloat(e.target.value) || 0)}
               className="text-lg font-bold"
@@ -191,11 +131,11 @@ export function RegistrarPagoInversionistaDialog({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Método de Pago</Label>
               <Select value={metodoPago} onValueChange={(val) => setMetodoPago(val || "transferencia")}>
-                <SelectTrigger aria-label="Método de Pago">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -12,11 +12,6 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Non-production app environments must use an isolated Firebase project.
-if (["preview", "development"].includes(process.env.NEXT_PUBLIC_FINOVA_ENV || "") && firebaseConfig.projectId === "finova-3b91d") {
-  throw new Error("Usa un proyecto Firebase de pruebas o los emuladores. Este entorno no puede conectarse a producción.");
-}
-
 // Initialize Firebase for Client-side
 const firstInitialization = getApps().length === 0;
 const app = firstInitialization ? initializeApp(firebaseConfig) : getApp();

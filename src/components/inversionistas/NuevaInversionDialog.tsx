@@ -1,30 +1,32 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
 
-import { useState, useEffect, useMemo } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { SearchPicker } from '@/components/SearchPicker';
 import { Button } from "@/components/ui/button";
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PlusCircle, Loader2, DollarSign, Calendar, TrendingUp, Briefcase, AlertCircle, Percent } from "lucide-react";
-import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, addDoc, doc, writeBatch, serverTimestamp, updateDoc, increment } from "firebase/firestore";
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from "@/components/ui/table";
 import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
-import { Inversionista, ModalidadPagoInversionista } from "@/types";
 import { generarCronogramaInversion } from "@/lib/calculadoraInversion";
-import { format, addMonths } from "date-fns";
+import { db } from "@/lib/firebase";
+import { useFinanceRequest } from "@/lib/use-finance-request";
+import { Inversionista,ModalidadPagoInversionista } from "@/types";
+import { addMonths,format } from "date-fns";
+import { collection,getDocs,query,where } from "firebase/firestore";
+import { AlertCircle,Briefcase,Calendar,DollarSign,Loader2,Percent,PlusCircle,TrendingUp } from "lucide-react";
+import { useMemo,useState } from "react";
+import { toast } from "sonner";
 import { NuevoInversionistaDialog } from "./NuevoInversionistaDialog";
 
 interface NuevaInversionDialogProps {
   onInversionCreada?: () => void;
-  triggerButton?: React.ReactNode;
+  triggerButton?: React.ReactElement;
 }
 
 export function NuevaInversionDialog({ onInversionCreada, triggerButton }: NuevaInversionDialogProps) {
   const { userData } = useAuth();
+  const finance = useFinanceRequest();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inversionistas, setInversionistas] = useState<Inversionista[]>([]);
@@ -32,11 +34,11 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
 
   // Form states
   const [inversionistaId, setInversionistaId] = useState("");
-  const [montoTotal, setMontoTotal] = useState<number>(0);
-  const [montoCartera, setMontoCartera] = useState<number>(0);
-  const [montoOtros, setMontoOtros] = useState<number>(0);
-  const [tieneInteres, setTieneInteres] = useState(false);
-  const [tasaInteresMensual, setTasaInteresMensual] = useState<number>(0);
+  const [montoTotal, setMontoTotal] = useState<number>(8000);
+  const [montoCartera, setMontoCartera] = useState<number>(2000);
+  const [montoOtros, setMontoOtros] = useState<number>(6000);
+  const [tieneInteres, setTieneInteres] = useState(true);
+  const [tasaInteresMensual, setTasaInteresMensual] = useState<number>(2.5);
   const [modalidadPago, setModalidadPago] = useState<ModalidadPagoInversionista>('interes_mensual_capital_al_vencimiento');
   const [plazoMeses, setPlazoMeses] = useState<number>(6);
   const [fechaInicio, setFechaInicio] = useState(format(new Date(), "yyyy-MM-dd"));
@@ -53,18 +55,15 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
       const list: Inversionista[] = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() } as Inversionista));
       setInversionistas(list);
-    } catch (e: any) {
+      if (list.length > 0 && !inversionistaId) {
+        setInversionistaId(list[0].id);
+      }
+    } catch (e: unknown) {
       console.error("Error al cargar inversionistas:", e);
     } finally {
       setLoadingInversionistas(false);
     }
   };
-
-  useEffect(() => {
-    if (open) {
-      fetchInversionistas();
-    }
-  }, [open, userData?.empresaId]);
 
   // Manejo de cambio de Monto Total
   const handleMontoTotalChange = (nuevoTotal: number) => {
@@ -96,16 +95,16 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
   // Cronograma proyectado en vivo
   const resumenCronograma = useMemo(() => {
     if (montoTotal <= 0 || plazoMeses <= 0 || !fechaPrimerPago) {
-      return { cuotas: [], totalCapital: 0, totalInteres: 0, totalPagar: 0 };
+      return { cuotas: [], totalCapital: 0, totalInteres: 0, totalPagar: 0, error: "Completa las condiciones para generar el cronograma." };
     }
-    return generarCronogramaInversion({
+    try { return { ...generarCronogramaInversion({
       montoTotal,
       tieneInteres,
       tasaInteresMensual: tieneInteres ? tasaInteresMensual : 0,
       modalidadPago: tieneInteres ? modalidadPago : 'devolucion_capital_en_cuotas',
       plazoMeses,
       fechaPrimerPago
-    });
+    }), error: "" }; } catch (error) { return { cuotas: [], totalCapital: 0, totalInteres: 0, totalPagar: 0, error: errorMessage(error) }; }
   }, [montoTotal, tieneInteres, tasaInteresMensual, modalidadPago, plazoMeses, fechaPrimerPago]);
 
   const porcentajeCartera = montoTotal > 0 ? ((montoCartera / montoTotal) * 100).toFixed(1) : "0";
@@ -130,82 +129,27 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
       return;
     }
 
-    const inversionistaSel = inversionistas.find(inv => inv.id === inversionistaId);
-    const inversionistaNombre = inversionistaSel ? `${inversionistaSel.nombres} ${inversionistaSel.apellidos || ''}`.trim() : "Inversionista";
 
+    if (!resumenCronograma.cuotas.length) { toast.error(resumenCronograma.error); return; }
     setLoading(true);
     try {
-      const batch = writeBatch(db);
-
-      // 1. Crear documento de Contrato de Inversión
-      const contratoRef = doc(collection(db, "inversion_contratos"));
-      const contratoData = {
-        empresaId: userData.empresaId,
-        inversionistaId,
-        inversionistaNombre,
-        inversionistaIdentificacion: inversionistaSel?.identificacion || "",
-        montoTotal,
-        montoCartera,
-        montoOtros,
-        tieneInteres,
-        tasaInteresMensual: tieneInteres ? tasaInteresMensual : 0,
-        modalidadPago: tieneInteres ? modalidadPago : 'devolucion_capital_en_cuotas',
-        plazoMeses,
-        fechaInicio,
-        fechaPrimerPago,
-        totalInteresPagar: resumenCronograma.totalInteres,
-        totalPagar: resumenCronograma.totalPagar,
-        totalPagado: 0,
-        saldoPendiente: resumenCronograma.totalPagar,
-        estado: 'activo',
-        observaciones: observaciones.trim(),
-        createdAt: serverTimestamp()
-      };
-      batch.set(contratoRef, contratoData);
-
-      // 2. Crear las cuotas proyectadas del inversionista
-      resumenCronograma.cuotas.forEach(c => {
-        const cuotaRef = doc(collection(db, "cuotas_inversionistas"));
-        batch.set(cuotaRef, {
-          empresaId: userData.empresaId,
-          inversionContratoId: contratoRef.id,
-          inversionistaId,
-          numeroCuota: c.numeroCuota,
-          fechaVencimiento: c.fechaVencimiento,
-          capital: c.capital,
-          interes: c.interes,
-          totalCuota: c.totalCuota,
-          montoPagado: 0,
-          saldoRestante: c.totalCuota,
-          estado: 'pendiente'
-        });
-      });
-
-      // 3. Actualizar estadísticas del Inversionista
-      const inversionistaRef = doc(db, "inversionistas", inversionistaId);
-      batch.update(inversionistaRef, {
-        totalInvertido: increment(montoTotal),
-        saldoPendiente: increment(resumenCronograma.totalPagar)
-      });
-
-      await batch.commit();
-
+      await finance.submit({ action: "investment", inversionistaId, montoTotal, montoCartera, montoOtros, tieneInteres, tasaInteresMensual: tieneInteres ? tasaInteresMensual : 0, modalidadPago: tieneInteres ? modalidadPago : "devolucion_capital_en_cuotas", plazoMeses, fechaInicio, fechaPrimerPago, observaciones });
       toast.success("¡Inversión registrada y cronograma generado exitosamente!");
       setOpen(false);
       if (onInversionCreada) {
         onInversionCreada();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error al registrar inversión:", err);
-      toast.error("Error al registrar: " + err.message);
+      toast.error("Error al registrar: " + errorMessage(err));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={triggerButton ? (triggerButton as any) : <Button className="gap-2 " />}>
+    <Dialog open={open} onOpenChange={value => { if (loading) return; if (value) { finance.reset(); void fetchInversionistas(); } setOpen(value); }}>
+      <DialogTrigger render={triggerButton ? triggerButton : <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white" />}>
         {!triggerButton && (
           <>
             <PlusCircle className="h-4 w-4" />
@@ -225,7 +169,6 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5 py-2">
-          <p className="rounded-lg border bg-muted/30 p-3 text-sm">Registra este financiamiento una sola vez. Si ya ingresaste el dinero como aporte en Pagos de capital, solicita su vinculación y conciliación antes de crear otro registro de fondeo.</p>
           {/* Selección de Inversionista */}
           <div className="space-y-1.5 bg-muted/30 p-3 rounded-lg border">
             <div className="flex items-center justify-between">
@@ -251,7 +194,18 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
                 <AlertCircle className="h-4 w-4" /> No hay inversionistas registrados. Haz clic arriba para registrar el primero.
               </div>
             ) : (
-              <SearchPicker label="Inversionista fondeador" value={inversionistaId} onChange={setInversionistaId} items={inversionistas.map(inv => ({ id: inv.id, label: `${inv.nombres} ${inv.apellidos || ''} — ${inv.identificacion}`, search: inv.banco || '' }))} />
+              <Select value={inversionistaId} onValueChange={(val) => setInversionistaId(val || "")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar inversionista" />
+                </SelectTrigger>
+                <SelectContent>
+                  {inversionistas.map(inv => (
+                    <SelectItem key={inv.id} value={inv.id}>
+                      {inv.nombres} {inv.apellidos || ''} — C.I./RUC: {inv.identificacion} {inv.banco ? `(${inv.banco})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
 
@@ -298,7 +252,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <div className="space-y-1 p-2.5 rounded-md border bg-emerald-500/5 border-emerald-500/20">
                 <Label htmlFor="montoCartera" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                   Destinado a Cartera de Créditos
@@ -346,7 +300,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
               Condiciones de Pago al Inversionista
             </h4>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">¿Paga Interés / Rendimiento?</Label>
                 <Select value={tieneInteres ? "si" : "no"} onValueChange={v => setTieneInteres(v === "si")}>
@@ -407,7 +361,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="plazoMeses" className="text-xs font-medium">Plazo (Meses)</Label>
                 <Input
@@ -447,6 +401,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
             </div>
           </div>
 
+          {resumenCronograma.error && <p role="alert" className="text-destructive text-sm">{resumenCronograma.error}</p>}
           {/* Resumen del Contrato y Previsualización de Cuotas */}
           <div className="space-y-3 bg-muted/20 p-4 rounded-lg border">
             <div className="flex items-center justify-between">
@@ -510,7 +465,7 @@ export function NuevaInversionDialog({ onInversionCreada, triggerButton }: Nueva
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading} className="gap-2 ">
+            <Button type="submit" disabled={loading} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Confirmar y Crear Contrato de Inversión
             </Button>

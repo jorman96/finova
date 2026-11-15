@@ -1,8 +1,9 @@
-import { auth } from "./firebase";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import { format } from "date-fns";
+import { format,parseISO } from "date-fns";
 import { es } from "date-fns/locale";
+import type { DocumentData } from "firebase/firestore";
+import jsPDF from "jspdf";
+import autoTable,{ type Table } from "jspdf-autotable";
+import { auth } from "./firebase";
 
 export const formatMoney = (amount: number, currency: string = "USD") => {
   return new Intl.NumberFormat("en-US", {
@@ -14,7 +15,7 @@ export const formatMoney = (amount: number, currency: string = "USD") => {
 const getBase64ImageFromUrl = async (imageUrl: string) => {
   const token = await auth.currentUser?.getIdToken();
   const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error("No se pudo cargar el logo.");
+  if (!res.ok) throw new Error("No se pudo cargar la imagen");
   const blob = await res.blob();
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -25,11 +26,12 @@ const getBase64ImageFromUrl = async (imageUrl: string) => {
 };
 
 export const generarReciboPago = async (
-  pago: any,
-  prestamo: any,
-  cliente: any,
-  empresa: any
+  pago: DocumentData,
+  prestamo: DocumentData | null | undefined,
+  cliente: DocumentData | undefined,
+  empresa: DocumentData | undefined
 ) => {
+  if (!cliente || !prestamo) throw new Error("Datos no disponibles para generar el documento");
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
 
@@ -76,10 +78,10 @@ export const generarReciboPago = async (
     autoTable(doc, {
       startY: startY,
       head: [["Cuota N°", "Valor Inicial", "Intereses", "Abono", "Saldo Restante"]],
-      body: pago.cuotasAplicadas.map((c: any) => [
+      body: pago.cuotasAplicadas.map((c: DocumentData) => [
         `${c.numeroCuota}`,
         formatMoney(c.valorCuota, empresa?.moneda),
-        c.interes == null ? "Por conciliar" : formatMoney(c.interes, empresa?.moneda),
+        formatMoney(c.interes, empresa?.moneda),
         formatMoney(c.montoAbonado, empresa?.moneda),
         formatMoney(c.saldoRestante, empresa?.moneda)
       ]),
@@ -87,7 +89,7 @@ export const generarReciboPago = async (
       headStyles: { fillColor: [66, 66, 66] },
       styles: { fontSize: 9, cellPadding: 4 },
     });
-    startY = (doc as any).lastAutoTable.finalY + 10;
+    startY = ((doc as jsPDF & { lastAutoTable?: Table }).lastAutoTable?.finalY ?? 100) + 10;
   }
 
   autoTable(doc, {
@@ -104,7 +106,7 @@ export const generarReciboPago = async (
   });
 
   // Total
-  const finalY = (doc as any).lastAutoTable.finalY || 130;
+  const finalY = (doc as jsPDF & { lastAutoTable?: Table }).lastAutoTable?.finalY ?? 130;
   
   doc.setFontSize(14);
   doc.setTextColor(0, 0, 0);
@@ -121,11 +123,12 @@ export const generarReciboPago = async (
 };
 
 export const generarContratoPrestamo = async (
-  prestamo: any,
-  cliente: any,
-  empresa: any,
-  cuotas: any[]
+  prestamo: DocumentData | null | undefined,
+  cliente: DocumentData | undefined,
+  empresa: DocumentData | undefined,
+  cuotas: DocumentData[]
 ) => {
+  if (!cliente || !prestamo) throw new Error("Datos no disponibles para generar el documento");
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
   const pageHeight = doc.internal.pageSize.height;
@@ -194,7 +197,7 @@ export const generarContratoPrestamo = async (
 
   const tablaBody = cuotas.map(c => [
     c.numero,
-    format(new Date(c.fechaVencimiento), "dd/MM/yyyy"),
+    format(parseISO(c.fechaVencimiento), "dd/MM/yyyy"),
     formatMoney(c.monto, empresa?.moneda),
     formatMoney(c.capital || 0, empresa?.moneda),
     formatMoney(c.interes || 0, empresa?.moneda),
@@ -231,7 +234,7 @@ export const generarContratoPrestamo = async (
   });
 
   // Pie de página (Firmas)
-  const finalY = (doc as any).lastAutoTable.finalY || 200;
+  const finalY = (doc as jsPDF & { lastAutoTable?: Table }).lastAutoTable?.finalY ?? 200;
   
   if (finalY < pageHeight - 50) {
     doc.setDrawColor(...secondaryColor);

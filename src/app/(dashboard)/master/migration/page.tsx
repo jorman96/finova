@@ -1,9 +1,3 @@
-import Link from 'next/link';
 export default function MigrationPage() {
-  return <section className="mx-auto max-w-xl space-y-4 py-8">
-    <h1 className="text-2xl font-semibold">Migración de datos históricos</h1>
-    <p>La reasignación automática está retirada. Los registros conservan su financiera y su historial.</p>
-    <p className="text-muted-foreground">Una migración requiere inventario de registros, financiera de destino explícita, respaldo, simulación y validación de resultados. Solicita una revisión administrativa antes de modificar datos históricos.</p>
-    <Link href="/master" className="underline">Volver a administración de financieras</Link>
-  </section>;
+  return <div className="space-y-4 max-w-2xl"><h1 className="text-2xl font-bold">Auditoría de datos históricos</h1><p>Las migraciones de contratos se revisan antes de aplicarse. El sistema no reasigna registros de otras empresas ni recalcula acuerdos existentes automáticamente.</p><p>Ejecuta desde un entorno administrativo seguro:</p><code className="block border rounded p-3">node scripts/audit-data.mjs --empresa ID</code><p>El informe identifica saldos, cuotas, permisos y metadatos que requieren revisión. La opción --apply solo completa metadatos ausentes; no modifica importes ni roles.</p></div>;
 }

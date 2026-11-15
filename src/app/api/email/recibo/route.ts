@@ -1,14 +1,15 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
-import { requireActor, apiError } from "@/lib/server-auth";
+import { idSchema } from "@/lib/finance-schema";
+import { sendNotification } from "@/lib/notification-service";
 import { collectors } from "@/lib/permissions";
 import { rateLimit } from "@/lib/rate-limit";
-import { sendNotification } from "@/lib/notification-service";
+import { apiError,requireActor } from "@/lib/server-auth";
+import { NextResponse } from "next/server";
+import { z } from "zod";
 export async function POST(request: Request) {
- try {
-  const actor = await requireActor(request, collectors);
-  await rateLimit("email:" + actor.uid, 30, 60_000);
-  const data = z.object({ reciboId: z.string().min(1).max(200).regex(/^[^/]+$/) }).parse(await request.json());
-  return NextResponse.json(await sendNotification(actor.empresaId, "recibo", data.reciboId));
- } catch (error) { return apiError(error); }
+  try {
+    const actor = await requireActor(request, collectors);
+    await rateLimit("email:" + actor.uid, 30, 60_000);
+    const { reciboId } = z.object({ reciboId: idSchema }).parse(await request.json());
+    return NextResponse.json(await sendNotification(actor.empresaId, "recibo", reciboId));
+  } catch (error) { return apiError(error); }
 }

@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "CommonJS", "moduleResolution": "Node", "strict": true,
+    "esModuleInterop": true, "skipLibCheck": true, "outDir": ".test-build", "rootDir": "."
+  },
+  "include": ["tests/domain.test.ts", "src/lib/amortization.ts", "src/lib/calculadoraInversion.ts", "src/lib/money.ts", "src/lib/business-date.ts", "src/lib/payment-allocation.ts", "src/lib/permissions.ts"],
+  "exclude": ["node_modules", ".firebase"]
+}

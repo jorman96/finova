@@ -1,32 +1,28 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import { db } from "@/lib/firebase";
-import { doc, onSnapshot, collection, query, where, orderBy } from "firebase/firestore";
-import { InversionContrato, CuotaInversionista, PagoInversionista, Inversionista } from "@/types";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { RegistrarPagoInversionistaDialog } from "@/components/inversionistas/RegistrarPagoInversionistaDialog";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { 
-  ArrowLeft, 
-  Landmark, 
-  DollarSign, 
-  TrendingUp, 
-  Calendar, 
-  CheckCircle2, 
-  Clock, 
-  AlertCircle, 
-  FileText, 
-  ExternalLink,
-  Loader2,
-  Building2,
-  ShieldCheck
+import { Button } from "@/components/ui/button";
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from "@/components/ui/card";
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from "@/components/ui/table";
+import { useAuth } from "@/contexts/AuthContext";
+import { isOverdue } from "@/lib/business-date";
+import { dateValue } from "@/lib/date-value";
+import { db } from "@/lib/firebase";
+import { CuotaInversionista,InversionContrato,Inversionista,PagoInversionista } from "@/types";
+import { collection,doc,onSnapshot,query,where } from "firebase/firestore";
+import {
+ArrowLeft,
+Building2,
+Calendar,
+CheckCircle2,
+DollarSign,
+ExternalLink,
+Loader2
 } from "lucide-react";
 import Link from "next/link";
-import { RegistrarPagoInversionistaDialog } from "@/components/inversionistas/RegistrarPagoInversionistaDialog";
-import { format } from "date-fns";
+import { use,useEffect,useState } from "react";
+import { toast } from "sonner";
 
 export default function ContratoInversionDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -43,7 +39,8 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
   useEffect(() => {
     if (!contratoId || !userData?.empresaId) return;
 
-    setLoading(true);
+    let unsubInversionista = () => {};
+    const fail = () => { toast.error("No se pudo cargar el contrato o sus movimientos."); setLoading(false); };
 
     const unsubContrato = onSnapshot(doc(db, "inversion_contratos", contratoId), snap => {
       if (snap.exists()) {
@@ -52,15 +49,16 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
 
         // Cargar datos del inversionista
         if (cData.inversionistaId) {
-          onSnapshot(doc(db, "inversionistas", cData.inversionistaId), invSnap => {
+          unsubInversionista();
+          unsubInversionista = onSnapshot(doc(db, "inversionistas", cData.inversionistaId), invSnap => {
             if (invSnap.exists()) {
               setInversionista({ id: invSnap.id, ...invSnap.data() } as Inversionista);
             }
-          });
+          }, fail);
         }
       }
       setLoading(false);
-    });
+    }, fail);
 
     const unsubCuotas = onSnapshot(
       query(collection(db, "cuotas_inversionistas"), where("empresaId", "==", userData.empresaId), where("inversionContratoId", "==", contratoId)),
@@ -69,7 +67,7 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
         snap.forEach(d => list.push({ id: d.id, ...d.data() } as CuotaInversionista));
         list.sort((a, b) => a.numeroCuota - b.numeroCuota);
         setCuotas(list);
-      }
+      }, fail
     );
 
     const unsubPagos = onSnapshot(
@@ -78,10 +76,11 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
         const list: PagoInversionista[] = [];
         snap.forEach(d => list.push({ id: d.id, ...d.data() } as PagoInversionista));
         setPagos(list);
-      }
+      }, fail
     );
 
     return () => {
+      unsubInversionista();
       unsubContrato();
       unsubCuotas();
       unsubPagos();
@@ -259,7 +258,7 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
             </TableHeader>
             <TableBody>
               {cuotas.map(c => {
-                const isVencida = c.estado !== 'pagada' && new Date(c.fechaVencimiento) < new Date();
+                const isVencida = isOverdue(c);
                 return (
                   <TableRow key={c.id} className="text-xs hover:bg-muted/30">
                     <TableCell className="text-center font-bold">#{c.numeroCuota}</TableCell>
@@ -338,7 +337,7 @@ export default function ContratoInversionDetallePage({ params }: { params: Promi
                 </TableRow>
               ) : (
                 pagos.map(p => {
-                  const fechaStr = p.fecha?.toDate ? p.fecha.toDate().toLocaleDateString() : (p.fecha ? new Date(p.fecha).toLocaleDateString() : "Reciente");
+                  const fechaStr = dateValue(p.fecha)?.toLocaleDateString() || "Sin fecha";
                   return (
                     <TableRow key={p.id} className="text-xs">
                       <TableCell className="font-medium">{fechaStr}</TableCell>

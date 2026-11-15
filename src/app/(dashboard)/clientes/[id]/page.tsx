@@ -1,51 +1,51 @@
 "use client";
 
-import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState, use } from "react";
-import { doc, onSnapshot, updateDoc, arrayUnion, query, collection, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { Cliente } from "@/types";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScoreGauge } from "@/components/clientes/ScoreGauge";
+import { EliminarPrestamoDialog } from "@/components/prestamos/EliminarPrestamoDialog";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Edit, CreditCard, UploadCloud, Loader2, FileText, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from "@/components/ui/card";
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Tabs,TabsContent,TabsList,TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/contexts/AuthContext";
+import { dateValue } from "@/lib/date-value";
+import { db } from "@/lib/firebase";
+import { managers } from "@/lib/permissions";
+import { uploadFileToStorage } from "@/lib/storage";
+import { useFinanceRequest } from "@/lib/use-finance-request";
+import { Cliente,Prestamo } from "@/types";
+import { arrayUnion,collection,doc,onSnapshot,query,updateDoc,where } from "firebase/firestore";
+import { ArrowLeft,CreditCard,Edit,ExternalLink,FileText,UploadCloud } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { uploadFileToStorage } from "@/lib/storage";
+import { use,useEffect,useState } from "react";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { ScoreGauge } from "@/components/clientes/ScoreGauge";
-import { EditarClienteDialog } from '@/components/clientes/EditarClienteDialog';
-import { NuevoPrestamoDialog } from '@/components/prestamos/NuevoPrestamoDialog';
-import { managers } from '@/lib/permissions';
-import { apiPost } from '@/lib/api-client';
-import { LoadError } from '@/components/ListPagination';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 
 export default function ClienteDetallePage({ params }: { params: Promise<{ id: string }> }) {
-  const { userData } = useAuth();
   const resolvedParams = use(params);
   const { id } = resolvedParams;
+  const { userData } = useAuth();
+  const finance = useFinanceRequest();
+  const [scoreMotivo, setScoreMotivo] = useState("");
   const [cliente, setCliente] = useState<Cliente | null>(null);
-  const [prestamos, setPrestamos] = useState<any[]>([]);
+  const [prestamos, setPrestamos] = useState<Prestamo[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [openScoreDialog, setOpenScoreDialog] = useState(false);
   const [newScore, setNewScore] = useState(50);
-  const [scoreReason, setScoreReason] = useState(''), [scoreBusy, setScoreBusy] = useState(false), [loadError, setLoadError] = useState('');
   const router = useRouter();
 
   const handleUpdateScore = async () => {
-    if (!Number.isInteger(newScore) || newScore < 0 || newScore > 100 || scoreReason.trim().length < 10) { toast.error('Indica un valor entero entre 0 y 100 y un motivo de al menos 10 caracteres.'); return; }
-    setScoreBusy(true);
     try {
-      await apiPost('/api/clientes/score', { clienteId: id, score: newScore, motivo: scoreReason });
+      await finance.submit({ action: "score", clienteId: id, score: newScore, motivo: scoreMotivo });
+      finance.reset(); setScoreMotivo("");
       toast.success("Score actualizado correctamente");
       setOpenScoreDialog(false);
-    } catch (error) { toast.error(error instanceof Error ? error.message : 'No se pudo guardar el indicador.'); }
-    finally { setScoreBusy(false); }
+    } catch {
+      toast.error("Error al actualizar el score");
+    }
   };
 
   useEffect(() => {
@@ -60,14 +60,13 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
       setLoading(false);
     }, (error) => {
       console.error(error);
-      setLoadError('No se pudo cargar el expediente del cliente.');
       setLoading(false);
     });
 
     const qPrestamos = query(collection(db, "prestamos"), where("empresaId", "==", userData.empresaId), where("clienteId", "==", id));
     const unsubscribePrestamos = onSnapshot(qPrestamos, (snap) => {
-      setPrestamos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => setLoadError('No se pudo cargar el historial de créditos. El resumen puede estar incompleto.'));
+      setPrestamos(snap.docs.map(d => ({ id: d.id, ...d.data() } as Prestamo)));
+    });
 
     return () => {
       unsubscribeCliente();
@@ -108,11 +107,10 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
   };
 
   if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando perfil del cliente...</div>;
-  if (!cliente) return loadError ? <LoadError message={loadError} /> : null;
+  if (!cliente) return null;
 
   return (
     <div className="space-y-6">
-      {loadError && <LoadError message={loadError} />}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/clientes">
@@ -121,7 +119,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
             </Button>
           </Link>
           <div>
-            <h2 className="break-words text-3xl font-bold tracking-tight">{cliente.nombres} {cliente.apellidos}</h2>
+            <h2 className="text-3xl font-bold tracking-tight">{cliente.nombres} {cliente.apellidos}</h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-muted-foreground text-sm">CI: {cliente.cedula}</span>
               <Badge variant={cliente.estado === 'moroso' ? 'destructive' : cliente.estado === 'activo' ? 'default' : 'secondary'}>
@@ -130,14 +128,13 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {userData && ['superadmin','dueño','admin','cajero'].includes(userData.rol) && <EditarClienteDialog cliente={cliente} standalone />}
-          {userData && managers.includes(userData.rol) && <NuevoPrestamoDialog initialClienteId={cliente.id} />}
-          {userData?.rol !== 'consulta' && <Link className="inline-flex min-h-11 items-center rounded-lg border px-3 text-sm" href={'/gestion?cliente=' + cliente.id}>Crear gestión</Link>}
+        <div className="flex gap-2">
+          <Button variant="outline"><Edit className="mr-2 h-4 w-4" /> Editar Perfil</Button>
+          <Button><CreditCard className="mr-2 h-4 w-4" /> Nuevo Préstamo</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(16rem,1fr)_3fr] gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* Resumen Financiero Sidebar */}
         <div className="space-y-6">
           <Card>
@@ -152,7 +149,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
               <div>
                 <p className="text-sm text-muted-foreground">Total Pagado</p>
                 <p className="text-2xl font-bold text-green-600">
-                  ${prestamos.reduce((acc, p) => acc + ((p.totalPagar ?? p.montoTotal ?? 0) - (p.saldoRestante || 0)), 0).toFixed(2)}
+                  ${prestamos.reduce((acc, p) => acc + ((p.monto || 0) - (p.saldoRestante || 0)), 0).toFixed(2)}
                 </p>
               </div>
               <div className="pt-4 border-t">
@@ -163,44 +160,41 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
               </div>
             </CardContent>
           </Card>
-
+          
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-center">Indicador interno de pago</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center space-y-4 pt-2">
-              {cliente.score == null ? <p className="text-muted-foreground">Sin evaluar</p> : <ScoreGauge score={cliente.score} />}
-              <p className="text-xs text-center text-muted-foreground">Valoración interna de 0 a 100. No corresponde a un buró de crédito.</p>
-              {cliente.scoreRevision && <div className="w-full rounded-lg bg-muted p-3 text-xs"><p>Última revisión: {cliente.scoreRevision.usuarioNombre} · {new Date(cliente.scoreRevision.fecha).toLocaleDateString('es-EC')}</p><p className="mt-1">{cliente.scoreRevision.motivo}</p></div>}
-
-              {userData && managers.includes(userData.rol) && <Dialog open={openScoreDialog} onOpenChange={open => { if (!scoreBusy) { if (open) { setNewScore(cliente.score ?? 50); setScoreReason(''); } setOpenScoreDialog(open); } }}>
-                <DialogTrigger render={<Button variant="outline" size="sm" className="w-full mt-2">Revisar indicador</Button>} />
+              <ScoreGauge score={cliente.score ?? 50} />
+              
+              <Dialog open={openScoreDialog} onOpenChange={setOpenScoreDialog}>
+                <DialogTrigger render={<Button variant="outline" size="sm" className="w-full mt-2">Ajustar Score Manual</Button>} />
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Revisar indicador interno</DialogTitle>
+                    <DialogTitle>Ajustar Indicador interno de pago</DialogTitle>
                     <DialogDescription>
-                      Registra una valoración de 0 a 100 y su fundamento. La revisión quedará en la auditoría de la financiera.
+                      Modifica manualmente el puntaje de este cliente (0-100). Útil si tienes información externa.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="flex items-center gap-4">
-                      <Input
-                        type="number"
-                        aria-label="Indicador de 0 a 100"
-                        min="0" max="100"
-                        value={newScore}
+                      <Input 
+                        type="number" 
+                        min="0" max="100" 
+                        value={newScore} 
                         onChange={(e) => setNewScore(Number(e.target.value))}
                         className="text-center text-2xl font-bold h-14"
                       />
                     </div>
-                    <label className="block space-y-2 text-sm">Motivo de la revisión<Input value={scoreReason} maxLength={500} onChange={e => setScoreReason(e.target.value)} placeholder="Explica el fundamento de esta valoración" /></label>
                   </div>
+                  <label className="text-sm">Motivo del ajuste<Input value={scoreMotivo} onChange={e => setScoreMotivo(e.target.value)} minLength={10} placeholder="Motivo (mínimo 10 caracteres)" /></label>
                   <DialogFooter>
-                    <Button variant="outline" disabled={scoreBusy} onClick={() => setOpenScoreDialog(false)}>Cancelar</Button>
-                    <Button disabled={scoreBusy || scoreReason.trim().length < 10} onClick={handleUpdateScore}>{scoreBusy ? 'Guardando…' : 'Guardar revisión'}</Button>
+                    <Button variant="outline" onClick={() => setOpenScoreDialog(false)}>Cancelar</Button>
+                    <Button disabled={!userData || !managers.includes(userData.rol) || scoreMotivo.trim().length < 10} onClick={handleUpdateScore}>Guardar Score</Button>
                   </DialogFooter>
                 </DialogContent>
-              </Dialog>}
+              </Dialog>
             </CardContent>
           </Card>
 
@@ -226,14 +220,14 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
         </div>
 
         {/* Main Content Area */}
-        <div className="min-w-0">
+        <div className="md:col-span-3">
           <Tabs defaultValue="prestamos" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="prestamos">Préstamos</TabsTrigger>
               <TabsTrigger value="perfil">Perfil Completo</TabsTrigger>
               <TabsTrigger value="documentos">Documentos</TabsTrigger>
             </TabsList>
-
+            
             <TabsContent value="prestamos" className="mt-6 space-y-4">
               {prestamos.length === 0 ? (
                 <Card>
@@ -255,7 +249,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
                         <div className="flex justify-between items-start">
                           <div>
                             <CardTitle>Préstamo ${p.monto.toFixed(2)}</CardTitle>
-                            <CardDescription>Otorgado el {new Date(p.createdAt?.toDate ? p.createdAt.toDate() : p.createdAt).toLocaleDateString()}</CardDescription>
+                            <CardDescription>Otorgado el {dateValue(p.createdAt)?.toLocaleDateString() || "Sin fecha"}</CardDescription>
                           </div>
                           <Badge variant={p.estado === 'moroso' ? 'destructive' : p.estado === 'completado' ? 'secondary' : 'default'}>
                             {p.estado.toUpperCase()}
@@ -273,10 +267,13 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
                             <p className="font-medium capitalize">{p.frecuenciaPago}</p>
                           </div>
                         </div>
-                        <div className="mt-4 text-right">
-                           <Link href={`/prestamos/${p.id}`}>
+                        <div className="mt-4 flex justify-end items-center gap-2">
+                          {(userData?.rol === 'dueño' || userData?.rol === 'superadmin' || userData?.rol === 'admin') && (
+                            <EliminarPrestamoDialog prestamo={p} />
+                          )}
+                          <Link href={`/prestamos/${p.id}`}>
                             <Button variant="outline" size="sm">Ver Detalles</Button>
-                           </Link>
+                          </Link>
                         </div>
                       </CardContent>
                     </Card>
@@ -315,7 +312,7 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
                   <CardDescription>Gestión de cédula, comprobantes de domicilio y otros documentos.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-
+                  
                   <div className="flex items-center gap-4 p-4 border-2 border-dashed rounded-lg bg-muted/20">
                     <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
                       <UploadCloud className="h-6 w-6 text-primary" />
@@ -330,10 +327,10 @@ export default function ClienteDetallePage({ params }: { params: Promise<{ id: s
                       )}
                     </div>
                     <div>
-                      <Input
-                        type="file"
-                        onChange={handleFileUpload}
-                        disabled={uploading}
+                      <Input 
+                        type="file" 
+                        onChange={handleFileUpload} 
+                        disabled={uploading} 
                         className="max-w-[200px]"
                         accept=".pdf,.jpg,.jpeg,.png"
                       />

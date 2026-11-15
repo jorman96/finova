@@ -1,36 +1,24 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Finova
 
-## Getting Started
+Aplicación de gestión de cartera, cobros, fondeo de inversionistas y tesorería con Next.js, React y Firebase.
 
-First, run the development server:
+## Desarrollo
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Usa Node 24. Instala las dependencias con `npm ci`, configura las variables de Firebase y correo descritas en `docs/OPERACION.md` y ejecuta `npm run dev`.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Validación
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `npm run lint`: reglas de código y React.
+- `npx tsc --noEmit`: tipos.
+- `npm test`: cálculos monetarios, calendarios y permisos.
+- `npm run test:rules`: reglas de Firestore y Storage en emuladores.
+- `npm run test:integration`: APIs y transacciones con Next.js y Firebase demo.
+- `npm run build`: compilación de producción.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Las pruebas de emuladores requieren Java 21 y Firebase CLI 15.19.0. No conectan con producción.
 
-## Learn More
+## Documentación operativa
 
-To learn more about Next.js, take a look at the following resources:
+Consulta [Operación y transición segura](docs/OPERACION.md) antes de publicar reglas o aplicación. Los perfiles existentes, desgloses históricos y caminos antiguos de archivos requieren revisión antes del cambio. No ejecutes migraciones que recalculen contratos o reasignen empresas automáticamente.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Los cambios financieros se validan en servidor, conservan auditoría y usan idempotencia. El dashboard diferencia cifras históricas, cifras del período y desgloses no verificados. La aplicación conserva el historial mediante anulaciones en lugar de borrar transacciones.

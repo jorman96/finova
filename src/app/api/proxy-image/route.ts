@@ -1,4 +1,3 @@
-import { adminDb } from "@/lib/firebase-admin";
 import { validateImageUrl } from "@/lib/safe-image";
 import { apiError,ApiError,requireActor } from "@/lib/server-auth";
 export async function GET(request: Request) {
@@ -7,7 +6,7 @@ export async function GET(request: Request) {
     const raw = new URL(request.url).searchParams.get("url");
     if (!raw) throw new ApiError(400, "Falta la imagen.");
     let url;
-    try { url = validateImageUrl(raw, actor.empresaId, process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "", (await adminDb.collection("empresas").doc(actor.empresaId).get()).data()?.logoUrl); }
+    try { url = validateImageUrl(raw, actor.empresaId, process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || ""); }
     catch { throw new ApiError(400, "Imagen no permitida."); }
     const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(8000), cache: "no-store" });
     const type = response.headers.get("content-type")?.split(";")[0];

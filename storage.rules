@@ -1,21 +1,19 @@
 rules_version = '2';
 service firebase.storage {
- match /b/{bucket}/o {
-  function profile() { return firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data; }
-  function tenant(id) { return request.auth != null && profile().get('activo', true) == true && profile().empresaId == id && firestore.get(/databases/(default)/documents/empresas/$(id)).data.estado == 'activa'; }
-  function validFile() { return request.resource.size <= 5 * 1024 * 1024 && request.resource.contentType in ['image/jpeg','image/png','image/webp','application/pdf']; }
-  match /empresas/{empresaId}/{path=**} {
-   allow read: if tenant(empresaId);
-   allow create: if tenant(empresaId) && profile().rol in ['superadmin','dueño','admin','cajero','cobrador'] && validFile();
-   allow update, delete: if false;
+  match /b/{bucket}/o {
+    function member(empresaId) {
+      return request.auth != null &&
+        firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data.activo == true &&
+        firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data.empresaId == empresaId &&
+        firestore.get(/databases/(default)/documents/empresas/$(empresaId)).data.estado == 'activa';
+    }
+    match /empresas/{empresaId}/{allPaths=**} {
+      allow read: if member(empresaId);
+      allow create: if member(empresaId) &&
+        firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data.rol in ['superadmin','dueño','admin','cajero','cobrador'] &&
+        request.resource.size <= 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/(jpeg|png|webp)|application/pdf');
+      allow update, delete: if false;
+    }
   }
-  match /clientes/{id}/{path=**} {
-   allow read: if tenant(firestore.get(/databases/(default)/documents/clientes/$(id)).data.empresaId);
-   allow write: if false;
-  }
-  match /pagos/{id}/{path=**} {
-   allow read: if tenant(firestore.get(/databases/(default)/documents/pagos/$(id)).data.empresaId);
-   allow write: if false;
-  }
- }
 }

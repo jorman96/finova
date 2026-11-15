@@ -44,9 +44,10 @@ next-env.d.ts
 .firebase/
 src/lib/service-account.json
 
+.test-build/
 *-debug.log
 
-/public/workbox-*.js
+audit-data-report.json
+Claude outputs/
 
-/.private-backups/
-/.test-build/
+/.release-clientes/

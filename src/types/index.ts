@@ -1,15 +1,14 @@
+import type { Timestamp } from "firebase/firestore";
 export interface Usuario {
   uid: string;
   nombre: string;
-  nombres?: string;
-  apellidos?: string;
   email: string;
   documento?: string; // Nuevo
   telefono?: string;  // Nuevo
   rol: 'superadmin' | 'admin' | 'dueño' | 'gestor' | 'cobrador' | 'cajero' | 'consulta';
   empresaId: string;
   activo: boolean;
-  createdAt: any;
+  createdAt: Timestamp;
 }
 
 export interface CuentaBancaria {
@@ -21,6 +20,7 @@ export interface CuentaBancaria {
 }
 
 export interface InyeccionCapital {
+  revertida?: boolean;
   id: string;
   monto: number;
   fecha: string;
@@ -49,6 +49,7 @@ export interface Empresa {
   telefono: string;
   email: string;
   pais: string;
+  zonaHoraria?: string;
   moneda: string;
   plan: 'basico' | 'pro' | 'premium';
   estado: 'activa' | 'suspendida';
@@ -56,7 +57,7 @@ export interface Empresa {
   inyeccionesCapital?: InyeccionCapital[];
   bitacoraCapital?: MovimientoBitacoraCapital[];
   cuentasBancarias?: CuentaBancaria[];
-  createdAt: any;
+  createdAt: Timestamp;
 }
 
 export interface Cliente {
@@ -72,13 +73,13 @@ export interface Cliente {
   telefonoSecundario?: string;
   correo: string;
   direccion: string;
-
+  
   // Información laboral
   empresa: string;
   cargo: string;
   ingresosMensuales: number;
   antiguedadLaboral: string;
-
+  
   // Referencias
   referencia1: string;
   telefonoRef1: string;
@@ -88,9 +89,8 @@ export interface Cliente {
   // Estado financiero/Resumen
   estado: 'activo' | 'moroso' | 'cerrado' | 'nuevo';
   score?: number;
-  scoreRevision?: { anterior: number | null; actual: number; motivo: string; usuarioNombre: string; fecha: string };
   documentos?: { nombre: string; url: string }[];
-  createdAt: any;
+  createdAt: Timestamp;
 }
 
 export interface Prestamo {
@@ -107,14 +107,19 @@ export interface Prestamo {
   fechaPrimerPago: string;
   garantia: string;
   observaciones: string;
-
+  
   // Financiero
   totalInteres: number;
   totalPagar: number;
   saldoRestante: number;
-
-  estado: 'activo' | 'completado' | 'moroso';
-  createdAt: any;
+  
+  estado: 'activo' | 'completado' | 'moroso' | 'cancelado' | 'reestructurado';
+  createdAt: Timestamp;
+  esReestructuracion?: boolean;
+  prestamoOrigenId?: string;
+  nuevoPrestamoId?: string;
+  motivoReestructuracion?: string;
+  fechaReestructuracion?: Timestamp | Date | string;
 }
 
 export interface Cuota {
@@ -128,14 +133,16 @@ export interface Cuota {
   interes: number;
   totalCuota: number;
   saldoPendiente: number; // Saldo de capital restante después de esta cuota
-  estado: 'pendiente' | 'pagada' | 'vencida' | 'parcial';
+  estado: 'pendiente' | 'pagada' | 'vencida' | 'parcial' | 'anulada' | 'reestructurada';
   montoPagado: number;
-  capitalCobradoCentavos?: number;
-  interesCobradoCentavos?: number;
   fechaPago?: string;
 }
 
 export interface Pago {
+  anulado?: boolean;
+  montoCapital?: number;
+  montoInteres?: number;
+  desgloseVersion?: number;
   id: string;
   empresaId: string;
   prestamoId: string;
@@ -146,8 +153,7 @@ export interface Pago {
   cuentaDestino?: string;
   observaciones: string;
   comprobanteUrl?: string | null;
-  fecha: any;
-  fechaStr?: string;
+  fecha: Timestamp;
   registradoPor: string;
 }
 
@@ -168,10 +174,10 @@ export interface Inversionista {
   totalInvertido?: number;
   totalPagado?: number;
   saldoPendiente?: number;
-  createdAt: any;
+  createdAt: Timestamp;
 }
 
-export type ModalidadPagoInversionista =
+export type ModalidadPagoInversionista = 
   | 'interes_mensual_capital_al_vencimiento' // Interés cada mes, capital al final
   | 'cuota_amortizada_mensual'              // Capital + interés prorrateado mes a mes
   | 'devolucion_capital_en_cuotas';          // Sin interés: solo capital en cuotas mensuales
@@ -197,7 +203,7 @@ export interface InversionContrato {
   saldoPendiente: number;
   estado: 'activo' | 'liquidado' | 'cancelado';
   observaciones?: string;
-  createdAt: any;
+  createdAt: Timestamp;
 }
 
 export interface CuotaInversionista {
@@ -212,7 +218,7 @@ export interface CuotaInversionista {
   totalCuota: number;
   montoPagado: number;
   saldoRestante: number;
-  estado: 'pendiente' | 'pagada' | 'parcial';
+  estado: 'pendiente' | 'pagada' | 'parcial' | 'vencida';
   fechaPago?: string;
 }
 
@@ -231,7 +237,6 @@ export interface PagoInversionista {
   cuentaOrigen?: string;
   observaciones?: string;
   comprobanteUrl?: string | null;
-  fecha: any;
+  fecha: Timestamp;
   registradoPor: string;
 }
-

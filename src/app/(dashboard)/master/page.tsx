@@ -1,51 +1,39 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
+import type { DocumentData } from "firebase/firestore";
 
-import { SecurityReset } from '@/components/admin/SecurityReset';
-import { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import { collection, query, getDocs, addDoc, serverTimestamp, doc, updateDoc, getCountFromServer, where } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from "@/components/ui/card";
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
-import { Building2, Loader2, Users, ShieldAlert, CheckCircle2, UserPlus, CreditCard, Activity, PauseCircle, Eye, Search, PlusCircle, DollarSign } from "lucide-react";
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from "@/components/ui/select";
+import { Tabs,TabsContent,TabsList,TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/contexts/AuthContext";
+import { apiPost } from "@/lib/api-client";
+import { auth,db } from "@/lib/firebase";
+import { useResource } from "@/lib/use-resource";
+import { addDoc,collection,doc,getDocs,query,serverTimestamp,updateDoc,where } from "firebase/firestore";
+import { Activity,Building2,CheckCircle2,CreditCard,DollarSign,Eye,Loader2,PauseCircle,PlusCircle,Search,ShieldAlert,UserPlus,Users } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-
-import { UserAccessDialog } from "@/components/configuracion/UserAccessDialog";
+import { useEffect,useState } from "react";
+import { Bar,BarChart,CartesianGrid,Cell,Pie,PieChart,ResponsiveContainer,Tooltip,XAxis,YAxis } from "recharts";
+import { toast } from "sonner";
 
 const COLORS = ['#10b981', '#3b82f6', '#ef4444', '#f59e0b']; // emerald, blue, red, amber
-
-import { apiPost } from '@/lib/api-client';
 
 export default function MasterPanelPage() {
   const { userData, loading: authLoading } = useAuth();
   const router = useRouter();
-
-  const [empresas, setEmpresas] = useState<any[]>([]);
+  
+  const [revision, setRevision] = useState(0);
+  const globalData = useResource<{ empresas: DocumentData[]; metrics: { clientes: number; prestamos: number; empresas: number; capitalTotal: number }; chartData: { estados: { name: string; value: number }[]; crecimientoInquilinos: { mes: string; nuevas: number }[] } }>(String(revision), () => apiPost("/api/admin/overview", {}));
+  const empresas = globalData.data?.empresas || [];
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [pendingStatus, setPendingStatus] = useState<{ id: string; nombre: string; estado: 'activa' | 'suspendida' } | null>(null), [statusReason, setStatusReason] = useState(''), [statusBusy, setStatusBusy] = useState(false);
-
-  // Metrics
-  const [metrics, setMetrics] = useState({
-    clientes: 0,
-    prestamos: 0,
-    empresas: 0,
-    capitalTotal: 0
-  });
-
-  // Chart Data
-  const [chartData, setChartData] = useState({
-    estados: [] as any[],
-    crecimientoInquilinos: [] as any[]
-  });
+  const loading = globalData.loading;
+  const metrics = globalData.data?.metrics || { clientes: 0, prestamos: 0, empresas: 0, capitalTotal: 0 };
+  const chartData = globalData.data?.chartData || { estados: [], crecimientoInquilinos: [] };
 
   // Modals state
   const [openCreateEmpresa, setOpenCreateEmpresa] = useState(false);
@@ -54,14 +42,16 @@ export default function MasterPanelPage() {
 
   // Forms state
   const [nuevaEmpresa, setNuevaEmpresa] = useState({
-    nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "",
+    nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "", 
     telefono: "", email: "", pais: "Ecuador", moneda: "USD", plan: "basico"
   });
   const [creando, setCreando] = useState(false);
 
   const [selectedEmpresaId, setSelectedEmpresaId] = useState("");
+  const [newUser, setNewUser] = useState({ nombre: "", email: "", password: "", documento: "", telefono: "" });
+  const [creatingUser, setCreatingUser] = useState(false);
 
-  const [selectedEmpresaDetails, setSelectedEmpresaDetails] = useState<any>(null);
+  const [selectedEmpresaDetails, setSelectedEmpresaDetails] = useState<DocumentData | null>(null);
   const [savingDetails, setSavingDetails] = useState(false);
 
   useEffect(() => {
@@ -70,90 +60,7 @@ export default function MasterPanelPage() {
     }
   }, [userData, authLoading, router]);
 
-  const loadData = async () => {
-    try {
-      // 1. Cargar Empresas
-      const q = query(collection(db, "empresas"));
-      const snap = await getDocs(q);
-      const empresasData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-      // 2. Cargar Dueños
-      const qDuenos = query(collection(db, "usuarios"), where("rol", "==", "dueño"));
-      const snapDuenos = await getDocs(qDuenos);
-      const duenosData = snapDuenos.docs.map(d => ({ id: d.id, ...d.data() } as any));
-
-      const empresasConDueno = empresasData.map(emp => {
-        const dueno = duenosData.find(d => d.empresaId === emp.id);
-        return { ...emp, dueno };
-      });
-
-      setEmpresas(empresasConDueno);
-
-      // 3. Cargar Préstamos Globales para métricas
-      const qPrestamos = query(collection(db, "prestamos"));
-      const snapPrestamos = await getDocs(qPrestamos);
-      let totalCapital = 0;
-      let activos = 0;
-      let completados = 0;
-      let mora = 0;
-
-      snapPrestamos.forEach(doc => {
-        const p = doc.data();
-        totalCapital += (p.monto || 0);
-        if (p.estado === "completado") completados++;
-        else if (p.estado === "mora") mora++;
-        else activos++;
-      });
-
-      // 4. Cargar conteo de clientes global
-      const clientesCount = await getCountFromServer(collection(db, "clientes"));
-
-      setMetrics({
-        empresas: empresasData.length,
-        clientes: clientesCount.data().count,
-        prestamos: snapPrestamos.size,
-        capitalTotal: totalCapital
-      });
-
-      // Data for Charts
-      setChartData({
-        estados: [
-          { name: "Activos", value: activos },
-          { name: "Completados", value: completados },
-          { name: "En Mora", value: mora },
-        ],
-        crecimientoInquilinos: buildTenantGrowthChart(empresasData)
-      });
-
-    } catch (e) {
-      console.error(e);
-      toast.error("Error al cargar datos globales.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const buildTenantGrowthChart = (empresas: any[]) => {
-    const currentYear = new Date().getFullYear();
-    const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-    const growth = months.map(m => ({ mes: m, nuevas: 0 }));
-
-    empresas.forEach(emp => {
-      if (emp.createdAt) {
-        const d = emp.createdAt.toDate ? emp.createdAt.toDate() : new Date(emp.createdAt);
-        if (d.getFullYear() === currentYear) {
-          growth[d.getMonth()].nuevas++;
-        }
-      }
-    });
-    return growth;
-  };
-
-  useEffect(() => {
-    if (userData?.rol === "superadmin") {
-      loadData();
-    }
-  }, [userData]);
+  const loadData = () => setRevision(n => n + 1);
 
   const handleCreateEmpresa = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,11 +81,11 @@ export default function MasterPanelPage() {
         estado: "activa",
         createdAt: serverTimestamp()
       });
-
+      
       toast.success("Empresa (Inquilino) creada exitosamente.");
       setOpenCreateEmpresa(false);
       setNuevaEmpresa({
-        nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "",
+        nombre: "", razonSocial: "", identificacionFiscal: "", direccion: "", 
         telefono: "", email: "", pais: "Ecuador", moneda: "USD", plan: "basico"
       });
       loadData();
@@ -192,15 +99,38 @@ export default function MasterPanelPage() {
 
   const handleToggleEstado = async (empresaId: string, currentStatus: string) => {
     const newStatus = currentStatus === "activa" ? "suspendida" : "activa";
-    setStatusBusy(true);
     try {
-      await apiPost("/api/admin/empresa-estado", { empresaId, estado: newStatus, expectedEstado: currentStatus, motivo: statusReason });
-      setPendingStatus(null);
+      await updateDoc(doc(db, "empresas", empresaId), { estado: newStatus });
       toast.success(`Empresa ${newStatus === 'activa' ? 'activada' : 'suspendida'}.`);
       loadData();
-    } catch (error) {
-      toast.error("No se pudo cambiar el estado. Actualiza la lista y vuelve a intentarlo.");
-    } finally { setStatusBusy(false); }
+    } catch {
+      toast.error("Error al actualizar el estado.");
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingUser(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ ...newUser, empresaId: selectedEmpresaId, rol: "dueño" })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error creando usuario");
+
+      toast.success("Usuario administrador creado.");
+      setOpenUserModal(false);
+      setNewUser({ nombre: "", email: "", password: "", documento: "", telefono: "" });
+      loadData();
+    } catch (error: unknown) {
+      toast.error(errorMessage(error));
+    } finally {
+      setCreatingUser(false);
+    }
   };
 
   const handleSaveDetails = async (e: React.FormEvent) => {
@@ -231,8 +161,8 @@ export default function MasterPanelPage() {
     return <div className="h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
-  const filteredEmpresas = empresas.filter(e =>
-    e.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredEmpresas = empresas.filter(e => 
+    e.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || 
     e.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -242,7 +172,7 @@ export default function MasterPanelPage() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary flex items-center gap-2">
             <ShieldAlert className="h-8 w-8 text-destructive" />
-            Administración de Finova
+            Centro de Comando SaaS
           </h2>
           <p className="text-muted-foreground">Analíticas globales y gestión de inquilinos de Finova.</p>
         </div>
@@ -256,10 +186,10 @@ export default function MasterPanelPage() {
           </TabsTrigger>
           <TabsTrigger value="inquilinos">
             <Building2 className="h-4 w-4 mr-2" />
-            Financieras
+            Gestión de Inquilinos
           </TabsTrigger>
         </TabsList>
-
+        
         {/* TAB 1: DASHBOARD */}
         <TabsContent value="dashboard" className="space-y-6 pt-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -352,7 +282,7 @@ export default function MasterPanelPage() {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value: any) => [value, "Préstamos"]} />
+                      <Tooltip formatter={(value) => [value, "Préstamos"]} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}
@@ -375,14 +305,14 @@ export default function MasterPanelPage() {
           <Card>
             <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <CardTitle>Directorio de financieras</CardTitle>
+                <CardTitle>Directorio de Inquilinos</CardTitle>
                 <CardDescription>Gestión de las empresas operando en la plataforma.</CardDescription>
               </div>
               <div className="flex gap-2 w-full sm:w-auto">
                 <div className="relative w-full sm:w-[250px]">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar empresa..."
+                  <Input 
+                    placeholder="Buscar empresa..." 
                     className="pl-9"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -392,7 +322,7 @@ export default function MasterPanelPage() {
                   <Button onClick={() => setOpenCreateEmpresa(true)}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Nuevo Inquilino
                   </Button>
-                  <DialogContent className="max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] overflow-y-auto sm:max-w-2xl">
+                  <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>Registrar Nueva Financiera</DialogTitle>
                       <DialogDescription>Crea un nuevo espacio de trabajo aislado en el sistema.</DialogDescription>
@@ -406,7 +336,7 @@ export default function MasterPanelPage() {
                         <Label>Razón Social (Opcional)</Label>
                         <Input placeholder="Ej. Inversiones PrestaFácil S.A." value={nuevaEmpresa.razonSocial} onChange={e => setNuevaEmpresa({...nuevaEmpresa, razonSocial: e.target.value})} />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>RUC / NIT</Label>
                           <Input value={nuevaEmpresa.identificacionFiscal} onChange={e => setNuevaEmpresa({...nuevaEmpresa, identificacionFiscal: e.target.value})} required />
@@ -420,7 +350,7 @@ export default function MasterPanelPage() {
                         <Label>Dirección Física</Label>
                         <Input value={nuevaEmpresa.direccion} onChange={e => setNuevaEmpresa({...nuevaEmpresa, direccion: e.target.value})} />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Teléfono</Label>
                           <Input type="tel" value={nuevaEmpresa.telefono} onChange={e => setNuevaEmpresa({...nuevaEmpresa, telefono: e.target.value})} />
@@ -476,15 +406,16 @@ export default function MasterPanelPage() {
                         </div>
                         <p className="text-xs text-muted-foreground font-mono mt-1">ID: {emp.id}</p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex gap-2">
                         <Button variant="secondary" size="sm" onClick={() => { setSelectedEmpresaDetails(emp); setOpenDetailsModal(true); }}>
                           <Eye className="mr-2 h-4 w-4" /> Detalles
                         </Button>
-                          <Button variant="outline" size="sm" disabled={emp.estado !== 'activa'} title={emp.estado !== 'activa' ? 'Activa la financiera para crear accesos.' : 'Crear una cuenta de dueño o administrador.'} onClick={() => { setSelectedEmpresaId(emp.id); setOpenUserModal(true); }}>
-                            <UserPlus className="mr-2 h-4 w-4" /> Crear acceso
+                        {!emp.dueno && (
+                          <Button variant="outline" size="sm" onClick={() => { setSelectedEmpresaId(emp.id); setOpenUserModal(true); }}>
+                            <UserPlus className="mr-2 h-4 w-4" /> Dueño
                           </Button>
-                        <SecurityReset empresaId={emp.id} nombre={emp.nombre} />
-                        <Button variant={emp.estado === 'activa' ? 'destructive' : 'default'} size="sm" onClick={() => { setStatusReason(''); setPendingStatus({ id: emp.id, nombre: emp.nombre, estado: emp.estado }); }}>
+                        )}
+                        <Button variant={emp.estado === 'activa' ? 'destructive' : 'default'} size="sm" onClick={() => handleToggleEstado(emp.id, emp.estado)}>
                           {emp.estado === 'activa' ? (
                             <><PauseCircle className="mr-2 h-4 w-4" /> Suspender</>
                           ) : (
@@ -502,11 +433,47 @@ export default function MasterPanelPage() {
       </Tabs>
 
       {/* MODAL: ASIGNAR DUEÑO */}
-      <Dialog open={!!pendingStatus} onOpenChange={open => { if (!open && !statusBusy) setPendingStatus(null); }}><DialogContent showCloseButton={!statusBusy}><DialogHeader><DialogTitle>{pendingStatus?.estado === 'activa' ? 'Suspender financiera' : 'Reactivar financiera'}</DialogTitle><DialogDescription>{pendingStatus?.nombre}. La suspensión bloqueará operaciones y acceso al portal; conservará los usuarios y el historial financiero.</DialogDescription></DialogHeader><label className="space-y-2 text-sm">Motivo administrativo<Input minLength={10} maxLength={500} value={statusReason} onChange={e => setStatusReason(e.target.value)} /></label><DialogFooter><Button variant="outline" disabled={statusBusy} onClick={() => setPendingStatus(null)}>Cancelar</Button><Button variant={pendingStatus?.estado === 'activa' ? 'destructive' : 'default'} disabled={statusBusy || statusReason.trim().length < 10} onClick={() => { if (pendingStatus) void handleToggleEstado(pendingStatus.id, pendingStatus.estado); }}>{statusBusy ? 'Actualizando…' : 'Confirmar cambio'}</Button></DialogFooter></DialogContent></Dialog>
-      <UserAccessDialog open={openUserModal} onOpenChange={setOpenUserModal}
-        empresaId={selectedEmpresaId} empresaNombre={empresas.find(e => e.id === selectedEmpresaId)?.nombre || ""}
-        allowedRoles={["dueño", "admin"]}
-        onCreated={() => { toast.success("Cuenta de acceso creada correctamente."); void loadData(); }} />
+      <Dialog open={openUserModal} onOpenChange={setOpenUserModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Asignar Cuenta de Dueño</DialogTitle>
+            <DialogDescription>
+              Crea un usuario administrador para esta empresa. Podrá iniciar sesión inmediatamente.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateUser} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nombre Completo</Label>
+              <Input required value={newUser.nombre} onChange={e => setNewUser({...newUser, nombre: e.target.value})} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Documento (DNI/Cédula)</Label>
+                <Input required value={newUser.documento} onChange={e => setNewUser({...newUser, documento: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Teléfono Móvil</Label>
+                <Input type="tel" required value={newUser.telefono} onChange={e => setNewUser({...newUser, telefono: e.target.value})} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Correo Electrónico (Login)</Label>
+              <Input type="email" required value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+            </div>
+            <div className="space-y-2">
+              <Label>Contraseña Provisional</Label>
+              <Input type="password" required value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpenUserModal(false)}>Cancelar</Button>
+              <Button type="submit" disabled={creatingUser}>
+                {creatingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Crear Usuario
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* MODAL: DETALLES DE EMPRESA */}
       <Dialog open={openDetailsModal} onOpenChange={setOpenDetailsModal}>
@@ -517,11 +484,11 @@ export default function MasterPanelPage() {
               Información legal, comercial y de contacto de la financiera y su dueño.
             </DialogDescription>
           </DialogHeader>
-
+          
           {selectedEmpresaDetails && (
             <form onSubmit={handleSaveDetails} className="space-y-6">
               <div className="grid md:grid-cols-2 gap-6">
-
+                
                 {/* Columna Izquierda: Empresa */}
                 <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
                   <h3 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
@@ -535,7 +502,7 @@ export default function MasterPanelPage() {
                     <Label>Razón Social</Label>
                     <Input value={selectedEmpresaDetails.razonSocial || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, razonSocial: e.target.value})} />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>RUC / NIT</Label>
                       <Input value={selectedEmpresaDetails.identificacionFiscal} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, identificacionFiscal: e.target.value})} required />
@@ -549,7 +516,7 @@ export default function MasterPanelPage() {
                     <Label>Dirección Física</Label>
                     <Input value={selectedEmpresaDetails.direccion || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, direccion: e.target.value})} />
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Teléfono</Label>
                       <Input type="tel" value={selectedEmpresaDetails.telefono || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, telefono: e.target.value})} />
@@ -581,14 +548,14 @@ export default function MasterPanelPage() {
                   <h3 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
                     <Users className="h-5 w-5 text-primary" /> Datos del Dueño
                   </h3>
-
+                  
                   {selectedEmpresaDetails.dueno ? (
                     <>
                       <div className="space-y-2">
                         <Label>Nombre Completo</Label>
                         <Input value={selectedEmpresaDetails.dueno.nombre} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, dueno: { ...selectedEmpresaDetails.dueno, nombre: e.target.value }})} required />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Documento</Label>
                           <Input value={selectedEmpresaDetails.dueno.documento || ""} onChange={e => setSelectedEmpresaDetails({...selectedEmpresaDetails, dueno: { ...selectedEmpresaDetails.dueno, documento: e.target.value }})} />
