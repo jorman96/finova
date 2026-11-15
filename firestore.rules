@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function profile() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
-    function enabled() { return signedIn() && profile().activo == true; }
+    function enabled() { return signedIn() && profile().get('activo', true) == true; }
     function superadmin() { return enabled() && profile().rol == 'superadmin'; }
     function tenant(id) {
       return enabled() && profile().empresaId == id &&
@@ -12,8 +12,8 @@ service cloud.firestore {
     function manager(id) { return tenant(id) && profile().rol in ['superadmin', 'dueño', 'admin']; }
     function sameTenant() { return request.resource.data.empresaId == resource.data.empresaId; }
     match /usuarios/{uid} {
-      allow read: if enabled() && (request.auth.uid == uid || superadmin() || manager(resource.data.empresaId));
-      allow get: if signedIn() && request.auth.uid == uid;
+      allow get: if signedIn() && (request.auth.uid == uid || (enabled() && (superadmin() || manager(resource.data.empresaId))));
+      allow list: if enabled() && (superadmin() || manager(resource.data.empresaId));
       allow update: if enabled() && request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre','telefono','documento']);
       allow create, delete: if false;
     }

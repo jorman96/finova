@@ -13,7 +13,7 @@ export async function requireActor(request: Request, allowed: readonly Role[] = 
   const decoded = await adminAuth.verifyIdToken(token, true).catch(() => { throw new ApiError(401, "Sesión vencida o revocada."); });
   const snap = await adminDb.collection("usuarios").doc(decoded.uid).get();
   const user = snap.data();
-  if (!user || user.activo !== true || !allowed.includes(user.rol)) throw new ApiError(403, "No tienes permiso para esta operación.");
+  if (!user || user.activo === false || !allowed.includes(user.rol)) throw new ApiError(403, "No tienes permiso para esta operación.");
   if (user.rol !== "superadmin") {
     const empresa = await adminDb.collection("empresas").doc(user.empresaId).get();
     if (empresa.data()?.estado !== "activa") throw new ApiError(403, "Empresa suspendida o no disponible.");

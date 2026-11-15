@@ -16,11 +16,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setState({ user: currentUser, userData: null, loading: true, error: null });
       stopProfile = onSnapshot(doc(db, "usuarios", currentUser.uid), snap => {
         const data = snap.data();
-        if (!data || data.activo !== true) {
+        if (!data || data.activo === false) {
           setState({ user: currentUser, userData: null, loading: false, error: "Tu perfil no está habilitado. Contacta al administrador." });
           return;
         }
-        setState({ user: currentUser, userData: { ...data, uid: currentUser.uid } as Usuario, loading: false, error: null });
+        setState({ user: currentUser, userData: { ...data, activo: data.activo !== false, uid: currentUser.uid } as Usuario, loading: false, error: null });
       }, () => setState({ user: currentUser, userData: null, loading: false, error: "No se pudo validar tu perfil. Vuelve a iniciar sesión." }));
     });
     return () => { stopAuth(); stopProfile(); };
